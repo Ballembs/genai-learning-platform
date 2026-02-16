@@ -1,0 +1,848 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   CUSTOM BASE STYLES
+   ============================================ */
+
+@layer base {
+  :root {
+    --color-primary: #0ea5e9;
+    --color-primary-dark: #0284c7;
+    --color-beginner: #22c55e;
+    --color-intermediate: #f59e0b;
+    --color-advanced: #ec4899;
+    /* Safe area insets for iOS */
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* Prevent iOS text size adjustment */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+    /* Smooth scrolling on iOS */
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent pull-to-refresh on mobile */
+  body.no-scroll {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+
+  /* Improve tap highlighting */
+  * {
+    -webkit-tap-highlight-color: rgba(14, 165, 233, 0.1);
+  }
+}
+
+/* ============================================
+   CLICKABLE TERM STYLING
+   ============================================ */
+
+@layer components {
+  .clickable-term {
+    @apply relative inline cursor-pointer
+           text-primary-600 font-medium
+           border-b-2 border-dashed border-primary-300
+           hover:border-primary-500 hover:text-primary-700
+           active:text-primary-800
+           transition-all duration-150 ease-in-out;
+    /* Increase tap target without affecting layout */
+    padding: 2px 0;
+    margin: -2px 0;
+  }
+
+  /* Hide dot indicator on mobile */
+  .clickable-term::after {
+    content: '';
+    @apply absolute -right-1 -top-1 w-2 h-2
+           bg-primary-400 rounded-full opacity-0
+           transition-opacity duration-150;
+  }
+
+  @media (min-width: 640px) {
+    .clickable-term:hover::after {
+      @apply opacity-100;
+    }
+  }
+
+  .clickable-term--explored {
+    @apply text-primary-500 border-primary-200;
+  }
+
+  /* Show checkmark on larger screens only */
+  @media (min-width: 640px) {
+    .clickable-term--explored::before {
+      content: '✓';
+      @apply absolute -left-4 text-green-500 text-xs;
+    }
+  }
+}
+
+/* ============================================
+   POPUP STYLING
+   ============================================ */
+
+@layer components {
+  .popup-container {
+    @apply fixed z-50 bg-white rounded-xl shadow-2xl
+           border border-gray-100 overflow-hidden;
+    max-width: 420px;
+    min-width: 280px;
+  }
+
+  /* Full width on very small screens */
+  @media (max-width: 359px) {
+    .popup-container {
+      min-width: calc(100vw - 32px);
+    }
+  }
+
+  .popup-header {
+    @apply bg-gradient-to-r from-primary-500 to-primary-600
+           text-white px-4 sm:px-5 py-3 sm:py-4;
+  }
+
+  .popup-content {
+    @apply p-4 sm:p-5;
+  }
+
+  .popup-actions {
+    @apply flex gap-2 sm:gap-3 px-4 sm:px-5 pb-4 sm:pb-5;
+  }
+}
+
+/* ============================================
+   LESSON CONTENT STYLING
+   ============================================ */
+
+@layer components {
+  .lesson-content {
+    @apply prose prose-lg max-w-none;
+  }
+  
+  .lesson-content h1 {
+    @apply text-3xl font-bold text-gray-900 mb-6;
+  }
+  
+  .lesson-content h2 {
+    @apply text-2xl font-semibold text-gray-800 mt-10 mb-4
+           pb-2 border-b border-gray-200;
+  }
+  
+  .lesson-content h3 {
+    @apply text-xl font-semibold text-gray-700 mt-8 mb-3;
+  }
+  
+  .lesson-content p {
+    @apply text-gray-700 leading-relaxed mb-4;
+  }
+  
+  .lesson-content ul, .lesson-content ol {
+    @apply my-4 pl-6;
+  }
+  
+  .lesson-content li {
+    @apply mb-2;
+  }
+  
+  .lesson-content pre {
+    @apply bg-gray-900 text-gray-100 rounded-lg p-4 
+           overflow-x-auto my-6 text-sm;
+  }
+  
+  .lesson-content code {
+    @apply bg-gray-100 text-primary-700 px-1.5 py-0.5 
+           rounded text-sm font-mono;
+  }
+  
+  .lesson-content pre code {
+    @apply bg-transparent text-gray-100 p-0;
+  }
+  
+  .lesson-content blockquote {
+    @apply border-l-4 border-primary-400 bg-primary-50 
+           pl-4 py-3 pr-4 my-6 rounded-r-lg italic;
+  }
+  
+  .lesson-content table {
+    @apply w-full my-6 border-collapse;
+  }
+  
+  .lesson-content th {
+    @apply bg-gray-100 text-left p-3 font-semibold border-b-2 border-gray-300;
+  }
+  
+  .lesson-content td {
+    @apply p-3 border-b border-gray-200;
+  }
+}
+
+/* ============================================
+   DIAGRAM CONTAINER
+   ============================================ */
+
+@layer components {
+  .diagram-container {
+    @apply bg-white rounded-lg border border-gray-200 
+           p-6 my-6 overflow-x-auto;
+  }
+  
+  .diagram-container svg {
+    @apply mx-auto;
+  }
+}
+
+/* ============================================
+   LEVEL BADGES
+   ============================================ */
+
+@layer components {
+  .level-badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full 
+           text-sm font-medium;
+  }
+  
+  .level-badge--beginner {
+    @apply bg-beginner-light text-beginner-dark;
+  }
+  
+  .level-badge--intermediate {
+    @apply bg-intermediate-light text-intermediate-dark;
+  }
+  
+  .level-badge--advanced {
+    @apply bg-advanced-light text-advanced-dark;
+  }
+}
+
+/* ============================================
+   SIDEBAR STYLING
+   ============================================ */
+
+@layer components {
+  .sidebar {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100
+           p-4 sm:p-5;
+  }
+
+  /* Only sticky on desktop */
+  @media (min-width: 1024px) {
+    .sidebar {
+      @apply sticky top-24;
+    }
+  }
+
+  .sidebar-title {
+    @apply text-sm font-semibold text-gray-500 uppercase
+           tracking-wide mb-4;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-2 py-3 sm:py-2 px-3 rounded-lg
+           text-sm cursor-pointer transition-colors;
+    /* Ensure touch-friendly on mobile */
+    min-height: 44px;
+  }
+
+  .sidebar-item:hover {
+    @apply bg-gray-50;
+  }
+
+  .sidebar-item:active {
+    @apply bg-gray-100;
+  }
+
+  .sidebar-item--explored {
+    @apply text-green-600;
+  }
+
+  .sidebar-item--active {
+    @apply bg-primary-50 text-primary-700;
+  }
+}
+
+/* ============================================
+   CHAT BUTTON & WINDOW
+   ============================================ */
+
+@layer components {
+  .chat-button {
+    @apply fixed z-40
+           w-14 h-14 rounded-full
+           bg-gradient-to-r from-primary-500 to-primary-600
+           text-white shadow-lg
+           flex items-center justify-center
+           hover:shadow-xl hover:scale-105
+           active:scale-95
+           transition-all duration-200;
+    /* Position: bottom right, respecting safe area */
+    bottom: calc(24px + var(--safe-area-bottom));
+    right: 24px;
+  }
+
+  /* On mobile, move up if there's a bottom sheet trigger */
+  @media (max-width: 767px) {
+    .chat-button {
+      bottom: calc(88px + var(--safe-area-bottom));
+    }
+  }
+
+  .chat-window {
+    @apply fixed z-40
+           bg-white rounded-2xl shadow-2xl
+           border border-gray-100
+           flex flex-col overflow-hidden;
+    /* Desktop positioning */
+    bottom: calc(96px + var(--safe-area-bottom));
+    right: 24px;
+    width: 384px;
+    max-width: calc(100vw - 48px);
+    height: 500px;
+    max-height: 70vh;
+  }
+
+  /* Full screen on mobile is handled in component */
+}
+
+/* ============================================
+   PROGRESS BAR
+   ============================================ */
+
+@layer components {
+  .progress-bar {
+    @apply h-2 bg-gray-200 rounded-full overflow-hidden;
+  }
+  
+  .progress-bar-fill {
+    @apply h-full bg-gradient-to-r from-primary-400 to-primary-600 
+           rounded-full transition-all duration-500;
+  }
+}
+
+/* ============================================
+   QUIZ STYLING
+   ============================================ */
+
+@layer components {
+  .quiz-option {
+    @apply flex items-center gap-3 p-4 rounded-lg border-2 
+           border-gray-200 cursor-pointer transition-all;
+  }
+  
+  .quiz-option:hover {
+    @apply border-primary-300 bg-primary-50;
+  }
+  
+  .quiz-option--selected {
+    @apply border-primary-500 bg-primary-50;
+  }
+  
+  .quiz-option--correct {
+    @apply border-green-500 bg-green-50;
+  }
+  
+  .quiz-option--incorrect {
+    @apply border-red-500 bg-red-50;
+  }
+}
+
+/* ============================================
+   BREADCRUMB STYLING
+   ============================================ */
+
+@layer components {
+  .breadcrumb {
+    @apply flex items-center gap-2 text-sm text-gray-500 mb-6;
+  }
+  
+  .breadcrumb-item {
+    @apply hover:text-primary-600 transition-colors;
+  }
+  
+  .breadcrumb-separator {
+    @apply text-gray-300;
+  }
+  
+  .breadcrumb-current {
+    @apply text-gray-900 font-medium;
+  }
+}
+
+/* ============================================
+   MERMAID DIAGRAM OVERRIDES
+   ============================================ */
+
+.mermaid {
+  @apply flex justify-center;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ============================================
+   ANIMATIONS & KEYFRAMES
+   ============================================ */
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes bounce-soft {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes progress-fill {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes checkmark-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@layer utilities {
+  .animate-scale-in {
+    animation: scale-in 0.2s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+  }
+
+  .animate-slide-down {
+    animation: slide-down 0.3s ease-out;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.2s ease-out;
+  }
+
+  .animate-pulse-soft {
+    animation: pulse-soft 2s ease-in-out infinite;
+  }
+
+  .animate-shimmer {
+    animation: shimmer 1.5s infinite;
+  }
+
+  .animate-bounce-soft {
+    animation: bounce-soft 1s ease-in-out infinite;
+  }
+
+  .animate-progress-fill {
+    animation: progress-fill 0.8s ease-out forwards;
+  }
+}
+
+/* ============================================
+   HOVER EFFECTS
+   ============================================ */
+
+@layer components {
+  /* Card hover effect with lift */
+  .card-hover {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .card-hover:hover {
+    @apply -translate-y-1 shadow-xl;
+  }
+
+  /* Button with glow effect */
+  .btn-glow {
+    @apply transition-all duration-300;
+  }
+
+  .btn-glow:hover {
+    @apply shadow-lg;
+    box-shadow: 0 0 20px rgba(14, 165, 233, 0.3);
+  }
+
+  /* Interactive card with border animation */
+  .card-interactive {
+    @apply relative overflow-hidden transition-all duration-300;
+  }
+
+  .card-interactive::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+  }
+
+  .card-interactive:hover::before {
+    @apply opacity-100;
+  }
+
+  .card-interactive:hover {
+    @apply border-cyan-500/30;
+  }
+
+  /* Scale hover for icons and small elements */
+  .hover-scale {
+    @apply transition-transform duration-200;
+  }
+
+  .hover-scale:hover {
+    @apply scale-110;
+  }
+
+  /* Link with underline animation */
+  .link-animated {
+    @apply relative;
+  }
+
+  .link-animated::after {
+    content: '';
+    @apply absolute bottom-0 left-0 w-0 h-0.5 bg-cyan-400 transition-all duration-300;
+  }
+
+  .link-animated:hover::after {
+    @apply w-full;
+  }
+}
+
+/* ============================================
+   ENHANCED PROGRESS BAR
+   ============================================ */
+
+@layer components {
+  .progress-bar {
+    @apply h-2 bg-gray-200 rounded-full overflow-hidden relative;
+  }
+
+  .progress-bar::before {
+    content: '';
+    @apply absolute inset-0 opacity-0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 2s infinite;
+  }
+
+  .progress-bar:hover::before {
+    @apply opacity-100;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-gradient-to-r from-primary-400 to-primary-600
+           rounded-full transition-all duration-700 ease-out relative;
+  }
+
+  .progress-bar-fill::after {
+    content: '';
+    @apply absolute top-0 right-0 w-2 h-full rounded-full bg-white/30;
+  }
+}
+
+/* ============================================
+   SKELETON LOADING
+   ============================================ */
+
+@layer components {
+  .skeleton {
+    @apply bg-slate-800 rounded relative overflow-hidden;
+  }
+
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+    animation: shimmer 1.5s infinite;
+  }
+}
+
+/* ============================================
+   FOCUS STATES
+   ============================================ */
+
+@layer utilities {
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-900;
+  }
+}
+
+/* ============================================
+   DARK THEME ENHANCEMENTS
+   ============================================ */
+
+@layer components {
+  /* Glass morphism card */
+  .glass-card {
+    @apply bg-slate-900/80 backdrop-blur-md border border-slate-800/50;
+  }
+
+  /* Gradient border */
+  .gradient-border {
+    @apply relative;
+  }
+
+  .gradient-border::before {
+    content: '';
+    @apply absolute -inset-px rounded-xl opacity-0 transition-opacity duration-300;
+    background: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
+    z-index: -1;
+  }
+
+  .gradient-border:hover::before {
+    @apply opacity-100;
+  }
+}
+
+/* ============================================
+   TOUCH-FRIENDLY TARGETS
+   ============================================ */
+
+@layer components {
+  /* Minimum 44x44px touch target (Apple HIG recommendation) */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  /* Touch target for inline elements */
+  .touch-target-inline {
+    @apply py-2 px-3;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Touch target for cards */
+  .touch-target-card {
+    @apply p-4;
+    min-height: 64px;
+  }
+}
+
+/* ============================================
+   SAFE AREA UTILITIES
+   ============================================ */
+
+@layer utilities {
+  /* iOS safe area padding */
+  .pt-safe-area-top {
+    padding-top: var(--safe-area-top);
+  }
+
+  .pb-safe-area-bottom {
+    padding-bottom: var(--safe-area-bottom);
+  }
+
+  .pl-safe-area-left {
+    padding-left: var(--safe-area-left);
+  }
+
+  .pr-safe-area-right {
+    padding-right: var(--safe-area-right);
+  }
+
+  /* Safe area height spacers */
+  .h-safe-area-top {
+    height: var(--safe-area-top);
+  }
+
+  .h-safe-area-bottom {
+    height: var(--safe-area-bottom);
+  }
+}
+
+/* ============================================
+   RESPONSIVE UTILITIES
+   ============================================ */
+
+@layer utilities {
+  /* Text truncation with line clamp */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Prevent text selection on touch */
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Smooth momentum scrolling */
+  .scroll-touch {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Hide scrollbar but allow scrolling */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Overscroll behavior */
+  .overscroll-contain {
+    overscroll-behavior: contain;
+  }
+}
+
+/* ============================================
+   MOBILE-FIRST RESPONSIVE CARDS
+   ============================================ */
+
+@layer components {
+  /* Card that's full width on mobile */
+  .card-responsive {
+    @apply w-full rounded-xl sm:rounded-2xl;
+  }
+
+  /* Grid that stacks on mobile */
+  .grid-responsive {
+    @apply grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3;
+  }
+
+  /* Stat grid for dashboard */
+  .grid-stats {
+    @apply grid gap-3 sm:gap-4 grid-cols-2 md:grid-cols-4;
+  }
+}
+
+/* ============================================
+   MOBILE TYPOGRAPHY ADJUSTMENTS
+   ============================================ */
+
+@layer utilities {
+  /* Responsive text sizes */
+  .text-responsive-sm {
+    @apply text-xs sm:text-sm;
+  }
+
+  .text-responsive-base {
+    @apply text-sm sm:text-base;
+  }
+
+  .text-responsive-lg {
+    @apply text-base sm:text-lg;
+  }
+
+  .text-responsive-xl {
+    @apply text-lg sm:text-xl;
+  }
+
+  .text-responsive-2xl {
+    @apply text-xl sm:text-2xl;
+  }
+
+  .text-responsive-3xl {
+    @apply text-2xl sm:text-3xl md:text-4xl;
+  }
+}
+
+/* ============================================
+   MOBILE INPUT STYLES
+   ============================================ */
+
+@layer components {
+  /* Prevent zoom on iOS input focus */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  textarea {
+    font-size: 16px !important;
+  }
+
+  @media (min-width: 640px) {
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="search"],
+    textarea {
+      font-size: inherit !important;
+    }
+  }
+}
