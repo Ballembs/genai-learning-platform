@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# eBook build output (from master)
+*.epub
+*.mobi
+*.pdf
