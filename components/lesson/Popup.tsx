@@ -195,28 +195,54 @@ export function Popup() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, closePopup]);
 
-  // Calculate position
+  // Reposition popup on window resize
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    if (!isOpen || isMobile) return;
+    const handleResize = () => forceUpdate(n => n + 1);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isOpen, isMobile]);
+
+  // Calculate position - ensures popup stays within viewport
   const getPopupStyle = useCallback(() => {
     if (!position) return {};
-    
+
     const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 768;
-    const popupWidth = 400;
-    const popupHeight = 350;
-    
+    const popupWidth = Math.min(420, viewportWidth - 32);
+    const margin = 16;
+
     let left = position.x - popupWidth / 2;
-    let top = position.y;
-    
-    // Keep within viewport horizontally
-    if (left < 16) left = 16;
-    if (left + popupWidth > viewportWidth - 16) left = viewportWidth - popupWidth - 16;
-    
-    // If too close to bottom, show above the term
-    if (top + popupHeight > viewportHeight - 16) {
-      top = position.y - popupHeight - 50;
+    if (left < margin) left = margin;
+    if (left + popupWidth > viewportWidth - margin) left = viewportWidth - popupWidth - margin;
+
+    const spaceBelow = viewportHeight - position.y - margin;
+    const spaceAbove = position.y - margin;
+    const estimatedHeight = 400;
+
+    let top: number;
+    let maxHeight: number;
+
+    if (spaceBelow >= estimatedHeight) {
+      top = position.y;
+      maxHeight = spaceBelow;
+    } else if (spaceAbove >= estimatedHeight) {
+      top = position.y - estimatedHeight - 60;
+      if (top < margin) top = margin;
+      maxHeight = position.y - top - 20;
+    } else if (spaceBelow >= spaceAbove) {
+      top = position.y;
+      maxHeight = spaceBelow;
+    } else {
+      top = margin;
+      maxHeight = spaceAbove;
     }
-    
-    return { left, top };
+
+    maxHeight = Math.max(maxHeight, 200);
+    maxHeight = Math.min(maxHeight, viewportHeight - margin * 2);
+
+    return { left, top, maxHeight: `${maxHeight}px` };
   }, [position]);
 
   const handleLearnMore = () => {

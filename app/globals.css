@@ -98,9 +98,11 @@
 @layer components {
   .popup-container {
     @apply fixed z-50 bg-white rounded-xl shadow-2xl
-           border border-gray-100 overflow-hidden;
+           border border-gray-100;
     max-width: 420px;
     min-width: 280px;
+    display: flex;
+    flex-direction: column;
   }
 
   /* Full width on very small screens */
@@ -112,15 +114,17 @@
 
   .popup-header {
     @apply bg-gradient-to-r from-primary-500 to-primary-600
-           text-white px-4 sm:px-5 py-3 sm:py-4;
+           text-white px-4 sm:px-5 py-3 sm:py-4 flex-shrink-0;
   }
 
   .popup-content {
-    @apply p-4 sm:p-5;
+    @apply p-4 sm:p-5 overflow-y-auto overscroll-contain;
+    flex: 1;
+    min-height: 0;
   }
 
   .popup-actions {
-    @apply flex gap-2 sm:gap-3 px-4 sm:px-5 pb-4 sm:pb-5;
+    @apply flex gap-2 sm:gap-3 px-4 sm:px-5 pb-4 sm:pb-5 flex-shrink-0 bg-white;
   }
 }
 
