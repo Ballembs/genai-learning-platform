@@ -38,6 +38,8 @@ export interface LessonProgress {
   sectionsCompleted: string[];
   lastAccessedAt: Date;
   timeSpentMinutes: number;
+  quizScore?: number;
+  quizAttempts?: number;
 }
 
 export interface ChatMessage {

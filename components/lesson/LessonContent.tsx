@@ -4,6 +4,7 @@
 import React from 'react';
 import { ClickableTerm } from './ClickableTerm';
 import { MermaidDiagram } from '@/components/diagrams/MermaidDiagram';
+import { HighlightedCode } from '@/components/content/HighlightedCode';
 import type { Term } from '@/types';
 
 interface LessonContentProps {
@@ -49,12 +50,38 @@ export function LessonContent({ content, terms }: LessonContentProps) {
   };
 
   const renderTextContent = (text: string, key: string | number) => {
-    // Split by paragraphs and other block elements
-    const blocks = text.split(/\n\n+/);
-    
+    // Step 1: Extract code blocks before splitting to protect them from paragraph splitting
+    // Code blocks can contain blank lines that would otherwise be split incorrectly
+    const codeBlocks: { language: string; code: string }[] = [];
+    const processedText = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      const index = codeBlocks.length;
+      codeBlocks.push({ language: lang || '', code: code.trimEnd() });
+      return `%%CODE_BLOCK_${index}%%`;
+    });
+
+    // Step 2: Now split by double newlines (code blocks are protected)
+    const blocks = processedText.split(/\n\n+/);
+
     return (
       <div key={key}>
         {blocks.map((block, blockIndex) => {
+          // Step 3: Check for code block placeholders first
+          const codeBlockMatch = block.match(/^%%CODE_BLOCK_(\d+)%%$/);
+          if (codeBlockMatch) {
+            const codeBlockIndex = parseInt(codeBlockMatch[1], 10);
+            const codeBlock = codeBlocks[codeBlockIndex];
+            if (codeBlock) {
+              return (
+                <HighlightedCode
+                  key={blockIndex}
+                  code={codeBlock.code}
+                  language={codeBlock.language}
+                  className="my-6"
+                />
+              );
+            }
+          }
+
           // Check for headers
           if (block.startsWith('## ')) {
             return (
@@ -63,7 +90,7 @@ export function LessonContent({ content, terms }: LessonContentProps) {
               </h2>
             );
           }
-          
+
           if (block.startsWith('### ')) {
             return (
               <h3 key={blockIndex} className="text-xl font-semibold text-gray-800 mt-8 mb-3">
@@ -71,20 +98,27 @@ export function LessonContent({ content, terms }: LessonContentProps) {
               </h3>
             );
           }
-          
-          // Check for code blocks
+
+          // Defensive: handle code blocks that weren't matched by the regex (e.g., malformed)
           if (block.startsWith('```')) {
             const lines = block.split('\n');
-            const language = lines[0].slice(3);
-            const code = lines.slice(1, -1).join('\n');
-            
+            const language = lines[0].slice(3).trim();
+            // Handle both proper code blocks and those without closing ```
+            const hasClosingBackticks = lines[lines.length - 1] === '```';
+            const code = hasClosingBackticks
+              ? lines.slice(1, -1).join('\n')
+              : lines.slice(1).join('\n');
+
             return (
-              <pre key={blockIndex} className="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto my-6 text-sm">
-                <code className={`language-${language}`}>{code}</code>
-              </pre>
+              <HighlightedCode
+                key={blockIndex}
+                code={code}
+                language={language}
+                className="my-6"
+              />
             );
           }
-          
+
           // Check for blockquotes
           if (block.startsWith('> ')) {
             const quoteContent = block.split('\n').map(line => line.slice(2)).join('\n');
