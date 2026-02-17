@@ -1,9 +1,10 @@
 // app/api/chat/route.ts
-// POST endpoint for the AI chat assistant
+// POST endpoint for the AI chat assistant with RAG-powered context
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildChatSystemPrompt, buildChatMessages } from '@/lib/ai/prompts';
+import { getRAGContext, getIndexStats } from '@/lib/ai/rag';
 import type {
   ChatRequest,
   ChatResponse,
@@ -41,6 +42,35 @@ function validateRequest(body: unknown): body is ChatRequest {
   if (typeof ctx.currentPage !== 'string') return false;
   if (!['beginner', 'intermediate', 'advanced'].includes(ctx.userLevel as string)) return false;
   if (!Array.isArray(ctx.recentExplorations)) return false;
+
+  return true;
+}
+
+/**
+ * Check if RAG should be used for this message.
+ * Skip for very short messages and common greetings.
+ */
+function shouldUseRAG(message: string): boolean {
+  const trimmed = message.trim();
+
+  // Skip short messages
+  if (trimmed.length < 8) {
+    return false;
+  }
+
+  // Skip common greetings and meta questions
+  if (/^(hi|hey|hello|sup|yo|thanks|thank you|bye|ok|okay|cool|great|nice|got it)/i.test(trimmed)) {
+    return false;
+  }
+  if (/^how are you/i.test(trimmed)) {
+    return false;
+  }
+  if (/^what can you do/i.test(trimmed)) {
+    return false;
+  }
+  if (/^who are you/i.test(trimmed)) {
+    return false;
+  }
 
   return true;
 }
@@ -160,14 +190,49 @@ export async function POST(request: NextRequest) {
 
     const { message, context, history } = body;
 
+    // RAG retrieval (best-effort)
+    let ragContext = '';
+    if (shouldUseRAG(message)) {
+      try {
+        ragContext = await getRAGContext(message, {
+          topK: 5,
+          level: context.userLevel as UserLevel,
+          lessonId: context.lessonId,
+        });
+
+        if (ragContext) {
+          console.log(`[Chat+RAG] Found relevant content for: "${message.slice(0, 50)}..."`);
+        }
+      } catch (err) {
+        // Best-effort: continue without RAG
+        console.warn('[Chat+RAG] RAG search failed, continuing without context:', err);
+      }
+    }
+
     // Build system prompt with user context
-    const systemPrompt = buildChatSystemPrompt({
+    let systemPrompt = buildChatSystemPrompt({
       level: context.userLevel,
       currentPage: context.currentPage,
       lessonId: context.lessonId,
       termId: context.termId,
       recentExplorations: context.recentExplorations,
     });
+
+    // Append RAG context if available
+    if (ragContext) {
+      systemPrompt += `
+
+---
+
+${ragContext}
+
+INSTRUCTIONS FOR USING COURSE CONTENT:
+- Use the above course content to give accurate, grounded answers
+- Quote or reference specific sections when helpful
+- If the content covers the user's question, prioritize it over general knowledge
+- If the content doesn't fully answer the question, supplement with your knowledge but mention what the course covers
+- Suggest related terms from the content using [bracket-notation] so they become clickable`;
+    }
 
     // Build messages array with history
     const messages = buildChatMessages({
@@ -248,13 +313,21 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/chat
- * Return API information
+ * Return API information and RAG status
  */
 export async function GET() {
+  // Get RAG index stats
+  const ragStats = getIndexStats();
+  const ragStatus = ragStats.error
+    ? 'error'
+    : ragStats.ready
+      ? 'ready'
+      : 'not_initialized';
+
   return NextResponse.json({
     endpoint: '/api/chat',
     method: 'POST',
-    description: 'AI chat assistant for learning support',
+    description: 'AI chat assistant for learning support with RAG-powered context',
     body: {
       message: 'string - The user\'s message',
       context: {
@@ -273,14 +346,21 @@ export async function GET() {
     },
     features: [
       'Context-aware responses based on current page',
+      'RAG-powered search over course content',
       'Level-appropriate explanations',
       'Conversation history support',
       'Automatic term and lesson suggestions',
       'Encouraging, educational tone',
     ],
+    rag: {
+      status: ragStatus,
+      chunkCount: ragStats.chunkCount,
+      error: ragStats.error,
+    },
     notes: [
       'History is limited to last 10 messages to stay within context limits',
-      'RAG integration planned for searching lesson content',
+      'RAG index builds lazily on first relevant query',
+      'RAG is best-effort - chat works without it if Voyage AI is unavailable',
     ],
   });
 }

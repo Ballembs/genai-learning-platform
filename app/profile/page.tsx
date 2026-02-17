@@ -35,6 +35,8 @@ import {
 } from 'lucide-react';
 import { useUserStore, useChatStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth';
+import { lessonData } from '@/content/lessons';
+import { KnowledgeGraph } from '@/components/diagrams/KnowledgeGraph';
 import type { UserLevel, Exploration } from '@/types';
 
 // ============================================
@@ -53,6 +55,14 @@ const lessonNames: Record<string, string> = {
   'lesson-03': 'Embeddings',
   'lesson-04': 'RAG',
   'lesson-05': 'Agents',
+};
+
+const lessonSlugs: Record<string, string> = {
+  'lesson-01': '01-how-ai-works',
+  'lesson-02': '02-prompt-engineering',
+  'lesson-03': '03-embeddings',
+  'lesson-04': '04-rag',
+  'lesson-05': '05-agents',
 };
 
 type TabType = 'overview' | 'explorations' | 'chat' | 'settings';
@@ -76,19 +86,40 @@ export default function ProfilePage() {
     const explorations = profile?.explorations || [];
     const lessonProgress = profile?.lessonProgress || [];
 
+    // Term quizzes (from explorations/deep dives)
+    const termQuizzesWithScores = explorations.filter(e => e.quizScore !== undefined);
+    const termQuizzesPassed = termQuizzesWithScores.filter(e => e.quizScore! >= 70).length;
+    const termQuizAttempts = explorations.reduce((acc, e) => acc + (e.quizAttempts || 0), 0);
+
+    // Lesson quizzes
+    const lessonQuizzesWithScores = lessonProgress.filter(p => p.quizScore !== undefined);
+    const lessonQuizzesPassed = lessonQuizzesWithScores.filter(p => p.quizScore! >= 70).length;
+    const lessonQuizAttempts = lessonProgress.reduce((acc, p) => acc + (p.quizAttempts || 0), 0);
+
+    // Combined quiz stats
+    const allQuizScores = [
+      ...termQuizzesWithScores.map(e => e.quizScore!),
+      ...lessonQuizzesWithScores.map(p => p.quizScore!),
+    ];
+
+    const totalQuizzesPassed = termQuizzesPassed + lessonQuizzesPassed;
+    const totalQuizAttempts = termQuizAttempts + lessonQuizAttempts;
+    const avgQuizScore = allQuizScores.length > 0
+      ? Math.round(allQuizScores.reduce((acc, s) => acc + s, 0) / allQuizScores.length)
+      : 0;
+    const bestQuizScore = allQuizScores.length > 0 ? Math.max(...allQuizScores) : 0;
+
     return {
       termsExplored: explorations.length,
       deepDivesCompleted: explorations.filter(e => e.deepDiveViewedAt).length,
-      quizzesPassed: explorations.filter(e => e.quizScore && e.quizScore >= 70).length,
+      quizzesPassed: totalQuizzesPassed,
       lessonsStarted: lessonProgress.length,
       lessonsCompleted: lessonProgress.filter(p => p.percentComplete === 100).length,
       totalTimeMinutes: lessonProgress.reduce((acc, p) => acc + p.timeSpentMinutes, 0),
-      avgQuizScore: explorations.filter(e => e.quizScore).length > 0
-        ? Math.round(
-            explorations.filter(e => e.quizScore).reduce((acc, e) => acc + (e.quizScore || 0), 0) /
-            explorations.filter(e => e.quizScore).length
-          )
-        : 0,
+      avgQuizScore,
+      bestQuizScore,
+      totalQuizAttempts,
+      totalQuizzesTaken: allQuizScores.length,
     };
   }, [profile]);
 
@@ -115,26 +146,113 @@ export default function ProfilePage() {
 
   // Knowledge graph data
   const knowledgeGraphData = useMemo(() => {
-    const nodes: Array<{ id: string; label: string; type: 'lesson' | 'term' }> = [];
-    const edges: Array<{ from: string; to: string }> = [];
+    const nodes: Array<{ id: string; label: string; type: 'lesson' | 'term'; explored: boolean; quizScore?: number }> = [];
+    const edges: Array<{ from: string; to: string; type: 'contains' | 'related' }> = [];
 
     // Add lesson nodes
-    Object.keys(explorationsByLesson).forEach(lessonId => {
-      if (lessonId !== 'other') {
-        nodes.push({ id: lessonId, label: lessonNames[lessonId] || lessonId, type: 'lesson' });
+    const exploredLessons = new Set(
+      (profile?.explorations || []).map(e => e.fromLessonId).filter(Boolean)
+    );
+    Object.keys(lessonNames).forEach(lessonId => {
+      nodes.push({
+        id: lessonId,
+        label: lessonNames[lessonId] || lessonId,
+        type: 'lesson',
+        explored: exploredLessons.has(lessonId),
+      });
+    });
+
+    // Add term nodes and lesson→term edges
+    (profile?.explorations || []).forEach(exp => {
+      nodes.push({
+        id: exp.termId,
+        label: exp.termName,
+        type: 'term',
+        explored: true,
+        quizScore: exp.quizScore,
+      });
+      if (exp.fromLessonId) {
+        edges.push({ from: exp.fromLessonId, to: exp.termId, type: 'contains' });
       }
     });
 
-    // Add term nodes and edges
-    (profile?.explorations || []).forEach(exp => {
-      nodes.push({ id: exp.termId, label: exp.termName, type: 'term' });
-      if (exp.fromLessonId && exp.fromLessonId !== 'other') {
-        edges.push({ from: exp.fromLessonId, to: exp.termId });
-      }
+    // Add related term edges from lesson data
+    const exploredTermIds = new Set(nodes.filter(n => n.type === 'term').map(n => n.id));
+    Object.values(lessonData).forEach(lesson => {
+      lesson.terms.forEach(term => {
+        if (exploredTermIds.has(term.id)) {
+          term.relatedTerms.forEach(relatedId => {
+            if (exploredTermIds.has(relatedId)) {
+              // Avoid duplicate edges
+              const exists = edges.some(e =>
+                (e.from === term.id && e.to === relatedId) ||
+                (e.from === relatedId && e.to === term.id)
+              );
+              if (!exists) {
+                edges.push({ from: term.id, to: relatedId, type: 'related' });
+              }
+            }
+          });
+        }
+      });
     });
 
     return { nodes, edges };
-  }, [explorationsByLesson, profile?.explorations]);
+  }, [profile?.explorations]);
+
+  // Combined quiz history (lesson + term quizzes)
+  interface QuizHistoryItem {
+    id: string;
+    type: 'lesson' | 'term';
+    name: string;
+    score: number;
+    attempts: number;
+    href: string;
+    lastAttemptAt?: Date;
+  }
+
+  const quizHistory = useMemo(() => {
+    const items: QuizHistoryItem[] = [];
+
+    // Add lesson quizzes
+    (profile?.lessonProgress || []).forEach(progress => {
+      if (progress.quizScore !== undefined) {
+        items.push({
+          id: `lesson-${progress.lessonId}`,
+          type: 'lesson',
+          name: lessonNames[progress.lessonId] || progress.lessonId,
+          score: progress.quizScore,
+          attempts: progress.quizAttempts || 1,
+          href: `/course/${progress.lessonId.replace('lesson-', '')}`,
+          lastAttemptAt: progress.lastAccessedAt,
+        });
+      }
+    });
+
+    // Add term quizzes (from explorations/deep dives)
+    (profile?.explorations || []).forEach(exp => {
+      if (exp.quizScore !== undefined) {
+        items.push({
+          id: `term-${exp.termId}`,
+          type: 'term',
+          name: exp.termName,
+          score: exp.quizScore,
+          attempts: exp.quizAttempts || 1,
+          href: `/course/term/${exp.termId}`,
+          lastAttemptAt: exp.deepDiveViewedAt || exp.popupViewedAt,
+        });
+      }
+    });
+
+    // Sort by most recent first
+    items.sort((a, b) => {
+      const dateA = a.lastAttemptAt ? new Date(a.lastAttemptAt).getTime() : 0;
+      const dateB = b.lastAttemptAt ? new Date(b.lastAttemptAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    return items;
+  }, [profile?.lessonProgress, profile?.explorations]);
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -218,35 +336,67 @@ export default function ProfilePage() {
               className="space-y-6"
             >
               {/* Stats Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-                <StatCard
-                  icon={Sparkles}
-                  value={stats.termsExplored}
-                  label="Terms Explored"
-                  color="cyan"
-                  delay={0}
-                />
-                <StatCard
-                  icon={BookOpen}
-                  value={stats.deepDivesCompleted}
-                  label="Deep Dives"
-                  color="purple"
-                  delay={0.1}
-                />
-                <StatCard
-                  icon={Trophy}
-                  value={stats.quizzesPassed}
-                  label="Quizzes Passed"
-                  color="green"
-                  delay={0.2}
-                />
-                <StatCard
-                  icon={Clock}
-                  value={stats.totalTimeMinutes}
-                  label="Minutes Learned"
-                  color="amber"
-                  delay={0.3}
-                />
+              <div className="space-y-3 sm:space-y-4">
+                {/* Learning Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                  <StatCard
+                    icon={Sparkles}
+                    value={stats.termsExplored}
+                    label="Terms Explored"
+                    color="cyan"
+                    delay={0}
+                  />
+                  <StatCard
+                    icon={BookOpen}
+                    value={stats.deepDivesCompleted}
+                    label="Deep Dives"
+                    color="purple"
+                    delay={0.1}
+                  />
+                  <StatCard
+                    icon={Trophy}
+                    value={stats.quizzesPassed}
+                    label="Quizzes Passed"
+                    color="green"
+                    delay={0.2}
+                  />
+                  <StatCard
+                    icon={Clock}
+                    value={stats.totalTimeMinutes}
+                    label="Minutes Learned"
+                    color="amber"
+                    delay={0.3}
+                  />
+                </div>
+
+                {/* Quiz Stats */}
+                {stats.totalQuizzesTaken > 0 && (
+                  <div className="grid grid-cols-3 gap-3 sm:gap-4">
+                    <StatCard
+                      icon={Target}
+                      value={stats.avgQuizScore}
+                      label="Avg Quiz Score"
+                      color="cyan"
+                      delay={0.4}
+                      suffix="%"
+                    />
+                    <StatCard
+                      icon={Trophy}
+                      value={stats.bestQuizScore}
+                      label="Best Score"
+                      color="green"
+                      delay={0.5}
+                      suffix="%"
+                    />
+                    <StatCard
+                      icon={Zap}
+                      value={stats.totalQuizAttempts}
+                      label="Quiz Attempts"
+                      color="purple"
+                      delay={0.6}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Progress & Graph Row */}
@@ -313,62 +463,24 @@ export default function ProfilePage() {
                   )}
                 </div>
 
-                {/* Knowledge Graph Preview */}
+                {/* Knowledge Graph */}
                 <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
                   <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                     <Network className="w-5 h-5 text-purple-400" />
                     Knowledge Map
                   </h2>
-                  {knowledgeGraphData.nodes.length > 0 ? (
-                    <div className="relative h-48 bg-slate-800/50 rounded-xl overflow-hidden">
-                      {/* Simple visual representation */}
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="relative">
-                          {/* Center node */}
-                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs">
-                            You
-                          </div>
-                          {/* Orbiting nodes */}
-                          {knowledgeGraphData.nodes.slice(0, 8).map((node, i) => {
-                            const angle = (i / Math.min(knowledgeGraphData.nodes.length, 8)) * 2 * Math.PI;
-                            const radius = 70;
-                            const x = Math.cos(angle) * radius;
-                            const y = Math.sin(angle) * radius;
-                            return (
-                              <motion.div
-                                key={node.id}
-                                initial={{ opacity: 0, scale: 0 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: i * 0.1 }}
-                                className={`absolute w-10 h-10 rounded-full flex items-center justify-center text-xs font-medium ${
-                                  node.type === 'lesson'
-                                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                                    : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                                }`}
-                                style={{
-                                  left: `calc(50% + ${x}px - 20px)`,
-                                  top: `calc(50% + ${y}px - 20px)`,
-                                }}
-                                title={node.label}
-                              >
-                                {node.label.slice(0, 2)}
-                              </motion.div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      {knowledgeGraphData.nodes.length > 8 && (
-                        <div className="absolute bottom-2 right-2 text-xs text-slate-500">
-                          +{knowledgeGraphData.nodes.length - 8} more
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-slate-500">
-                      <Network className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                      <p>Explore terms to build your knowledge map</p>
-                    </div>
-                  )}
+                  <KnowledgeGraph
+                    nodes={knowledgeGraphData.nodes}
+                    edges={knowledgeGraphData.edges}
+                    height={280}
+                    onNodeClick={(id, type) => {
+                      if (type === 'lesson') {
+                        router.push(`/course/${lessonSlugs[id] || id}`);
+                      } else {
+                        router.push(`/course/term/${id}`);
+                      }
+                    }}
+                  />
                 </div>
               </div>
 
@@ -426,6 +538,101 @@ export default function ProfilePage() {
                     <Link href="/course" className="text-cyan-400 hover:underline text-sm mt-2 inline-block">
                       Go to Course
                     </Link>
+                  </div>
+                )}
+              </div>
+
+              {/* Quiz Scores */}
+              <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
+                <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-green-400" />
+                  Quiz Scores
+                  {quizHistory.length > 0 && (
+                    <span className="text-sm font-normal text-slate-500">
+                      ({quizHistory.length} quiz{quizHistory.length !== 1 ? 'zes' : ''})
+                    </span>
+                  )}
+                </h2>
+
+                {quizHistory.length > 0 ? (
+                  <>
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-3 gap-3 mb-6">
+                      <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-white">{stats.avgQuizScore}%</p>
+                        <p className="text-xs text-slate-500">Average</p>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-green-400">{stats.bestQuizScore}%</p>
+                        <p className="text-xs text-slate-500">Best Score</p>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-cyan-400">{stats.totalQuizAttempts}</p>
+                        <p className="text-xs text-slate-500">Attempts</p>
+                      </div>
+                    </div>
+
+                    {/* Quiz List */}
+                    <div className="space-y-3">
+                      {quizHistory.map((quiz, index) => (
+                        <motion.div
+                          key={quiz.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                        >
+                          <Link
+                            href={quiz.href}
+                            className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl hover:bg-slate-800 transition-all duration-300 group hover:shadow-lg hover:shadow-cyan-500/10 hover:-translate-y-0.5"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                quiz.type === 'lesson'
+                                  ? 'bg-cyan-500/20'
+                                  : 'bg-purple-500/20'
+                              }`}>
+                                {quiz.type === 'lesson' ? (
+                                  <BookOpen className="w-5 h-5 text-cyan-400" />
+                                ) : (
+                                  <Sparkles className="w-5 h-5 text-purple-400" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-medium text-white group-hover:text-cyan-400 transition-colors truncate">
+                                  {quiz.name}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  {quiz.type === 'lesson' ? 'Lesson Quiz' : 'Deep Dive Quiz'}
+                                  {quiz.attempts > 1 && ` · ${quiz.attempts} attempts`}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span className={`
+                                text-sm font-semibold px-3 py-1 rounded-full
+                                ${quiz.score >= 70
+                                  ? 'bg-green-500/20 text-green-400'
+                                  : quiz.score >= 50
+                                    ? 'bg-amber-500/20 text-amber-400'
+                                    : 'bg-red-500/20 text-red-400'
+                                }
+                              `}>
+                                {quiz.score}%
+                              </span>
+                              <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-cyan-400" />
+                            </div>
+                          </Link>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-slate-500">
+                    <Trophy className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p className="mb-1">No quiz scores yet</p>
+                    <p className="text-sm text-slate-600">
+                      Complete a lesson or deep dive quiz to see your scores here!
+                    </p>
                   </div>
                 )}
               </div>
@@ -766,12 +973,14 @@ function StatCard({
   label,
   color,
   delay = 0,
+  suffix = '',
 }: {
   icon: React.ElementType;
   value: number;
   label: string;
   color: 'cyan' | 'purple' | 'green' | 'amber';
   delay?: number;
+  suffix?: string;
 }) {
   const colorClasses = {
     cyan: 'bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500/30',
@@ -813,7 +1022,7 @@ function StatCard({
         animate={{ opacity: 1 }}
         transition={{ delay: delay + 0.2 }}
       >
-        <CountUp value={value} />
+        <CountUp value={value} />{suffix}
       </motion.p>
       <p className="text-sm text-slate-500 group-hover:text-slate-400 transition-colors">{label}</p>
     </motion.div>

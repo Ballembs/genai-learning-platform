@@ -9,81 +9,109 @@ import { usePopupStore, useUserStore, useNavigationStore } from '@/lib/store';
 import { MermaidDiagram } from '@/components/diagrams/MermaidDiagram';
 import { SkeletonText } from '@/components/ui/Skeleton';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { lessonData } from '@/content/lessons';
+import { getCached, setCache } from '@/lib/cache';
+import type { UserLevel } from '@/types';
 
-// Mock function to get popup content - in production, this would call the API
-async function getPopupContent(termId: string, level: string): Promise<{
+const POPUP_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// In-memory cache for instant access within session
+const memoryCache = new Map<string, PopupContentType>();
+
+interface PopupContentType {
   explanation: string;
   example?: string;
   diagram?: string;
-}> {
-  // Simulated API delay
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  // Mock content - in production, this comes from API/database
-  const mockContent: Record<string, any> = {
-    'embeddings': {
-      beginner: {
-        explanation: 'Embeddings are numbers that capture the meaning of text. Think of them as GPS coordinates, but for meaning instead of location. Words with similar meanings get similar numbers.',
-        example: '"Happy" and "joyful" would have similar numbers because they mean similar things. "Happy" and "refrigerator" would have very different numbers.',
-        diagram: `flowchart LR
-    A["happy"] --> B[Embedding Model]
-    B --> C["[0.2, 0.8, 0.1]"]
-    D["joyful"] --> B
-    B --> E["[0.2, 0.7, 0.2]"]
-    C -.->|"Similar!"| E`,
-      },
-      intermediate: {
-        explanation: 'Embeddings are dense vector representations of text, typically 768-1536 dimensions. They capture semantic meaning so that similar concepts have high cosine similarity.',
-        example: 'Using Voyage AI: embedding = voyage.embed(["machine learning"]) returns a vector like [0.023, -0.156, 0.089, ...]',
-        diagram: `flowchart LR
-    A[Text] --> B[Transformer Model]
-    B --> C[Mean Pooling]
-    C --> D["Dense Vector<br/>[768-1536 dims]"]`,
-      },
-      advanced: {
-        explanation: 'Embeddings are learned projections into continuous vector spaces via transformer architectures with mean pooling or [CLS] token representations. Training uses contrastive objectives (SimCLR, CLIP) or masked language modeling.',
-        example: 'Matryoshka embeddings allow variable dimensionality. HNSW indices enable sub-linear retrieval.',
-      },
-    },
-    'vector-database': {
-      beginner: {
-        explanation: 'A vector database is like a smart filing system that organizes content by meaning, not just keywords. It stores those "meaning numbers" (embeddings) and finds similar ones quickly.',
-        example: 'When you search "happy moments," it finds content about "joyful occasions" and "good times" because their numbers are close.',
-      },
-      intermediate: {
-        explanation: 'Vector databases store embeddings and enable fast similarity search using approximate nearest neighbor (ANN) algorithms. Popular options include Pinecone, Weaviate, and ChromaDB.',
-        example: 'ChromaDB: collection.query(query_embeddings=[...], n_results=5)',
-      },
-    },
-    'rag': {
-      beginner: {
-        explanation: 'RAG (Retrieval-Augmented Generation) is a way to give AI access to your documents. Instead of training AI on your data, you show it relevant parts when it needs them.',
-        example: 'Like an open-book exam: instead of memorizing everything, AI reads the relevant pages you provide for each question.',
-      },
-    },
-    'llm': {
-      beginner: {
-        explanation: 'An LLM (Large Language Model) is AI trained on massive amounts of text to predict and generate language. ChatGPT, Claude, and Gemini are all LLMs.',
-        example: 'When you type a message, the LLM predicts what word should come next, then the next, building up a full response.',
-      },
-    },
-    'chunking': {
-      beginner: {
-        explanation: 'Chunking is splitting your documents into smaller pieces so AI can find and use the right parts. Too big and you lose precision; too small and you lose context.',
-        example: 'A 100-page document might be split into 500-character chunks, each one searchable independently.',
-      },
-    },
-  };
+}
 
-  const termContent = mockContent[termId];
-  if (!termContent) {
-    // Return AI-generated content placeholder
-    return {
-      explanation: `This is where AI would generate an explanation for "${termId}" at ${level} level. In production, this calls Claude to generate contextual content.`,
-    };
+/**
+ * Get popup content for a term.
+ * Priority: memory cache → localStorage → lessonData → API
+ */
+async function getPopupContent(
+  termId: string,
+  level: UserLevel,
+  lessonId?: string
+): Promise<PopupContentType> {
+  const cacheKey = `popup:${termId}:${level}`;
+
+  // 1. Check in-memory cache (instant, same session)
+  const memCached = memoryCache.get(cacheKey);
+  if (memCached) {
+    return memCached;
   }
 
-  return termContent[level] || termContent.beginner;
+  // 2. Check localStorage cache (fast, cross-session)
+  const localCached = getCached<PopupContentType>(cacheKey);
+  if (localCached) {
+    memoryCache.set(cacheKey, localCached);
+    return localCached;
+  }
+
+  // 3. Check lessonData for pre-defined term popups
+  for (const [, lesson] of Object.entries(lessonData)) {
+    const term = lesson.terms.find((t) => t.id === termId || t.slug === termId);
+    if (term && term.popup[level]) {
+      const content: PopupContentType = {
+        explanation: term.popup[level].explanation,
+        example: term.popup[level].example,
+        // Note: lessonData popups don't have diagrams currently
+      };
+      // Cache it
+      memoryCache.set(cacheKey, content);
+      setCache(cacheKey, content, POPUP_CACHE_TTL);
+      return content;
+    }
+  }
+
+  // 4. Call API for unknown terms (generates with Claude)
+  try {
+    // Find lesson context
+    let lessonTitle = 'AI Course';
+    if (lessonId) {
+      const lessonMeta: Record<string, string> = {
+        'lesson-01': 'How AI Works',
+        'lesson-02': 'Prompt Engineering',
+        'lesson-03': 'Embeddings & Vector Search',
+        'lesson-04': 'RAG',
+        'lesson-05': 'Agents & Tools',
+      };
+      lessonTitle = lessonMeta[lessonId] || lessonTitle;
+    }
+
+    const response = await fetch('/api/popup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        termId,
+        term: termId.replace(/-/g, ' '),
+        level,
+        context: {
+          lessonId: lessonId || 'unknown',
+          lessonTitle,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content: PopupContentType = data.content;
+
+    // Cache the API response
+    memoryCache.set(cacheKey, content);
+    setCache(cacheKey, content, POPUP_CACHE_TTL);
+
+    return content;
+  } catch (err) {
+    console.error('Popup content fetch error:', err);
+    // Return fallback content
+    return {
+      explanation: `Unable to load explanation for "${termId.replace(/-/g, ' ')}". Please try again later.`,
+    };
+  }
 }
 
 export function Popup() {
@@ -120,10 +148,10 @@ export function Popup() {
   useEffect(() => {
     if (isOpen && termId) {
       setLoading(true);
-      getPopupContent(termId, currentLevel)
+      getPopupContent(termId, currentLevel as UserLevel, currentLessonId || undefined)
         .then(setContent)
         .catch(console.error);
-      
+
       // Track exploration
       if (!hasExplored(termId)) {
         addExploration({
@@ -139,7 +167,7 @@ export function Popup() {
         updateExploration(termId, { popupViewedAt: new Date() });
       }
     }
-  }, [isOpen, termId, currentLevel]);
+  }, [isOpen, termId, currentLevel, currentLessonId]);
 
   // Close on escape key
   useEffect(() => {

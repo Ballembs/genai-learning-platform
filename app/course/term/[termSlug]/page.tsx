@@ -1,10 +1,10 @@
 // app/course/term/[termSlug]/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,344 +17,117 @@ import {
   CheckCircle,
   Circle,
   ArrowRight,
-  Brain,
-  Clock,
   Trophy,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { useUserStore, useNavigationStore } from '@/lib/store';
-import { ClickableTerm } from '@/components/lesson/ClickableTerm';
 import { MermaidDiagram } from '@/components/diagrams/MermaidDiagram';
+import { MarkdownContent, CodeBlock } from '@/components/content/MarkdownContent';
+import { lessonData } from '@/content/lessons';
+import { getCached, setCache } from '@/lib/cache';
 import type { UserLevel } from '@/types';
 
-// Deep dive content type
-interface DeepDiveContent {
-  term: string;
-  slug: string;
-  fromLessonId: string;
-  fromLessonTitle: string;
-  oneLiner: Record<UserLevel, string>;
-  analogy: Record<UserLevel, { title: string; content: string }>;
-  howItWorks: Record<UserLevel, { content: string; diagram?: string }>;
-  codeExample?: Record<UserLevel, { language: string; code: string; explanation: string }>;
-  misconceptions: { myth: string; reality: string }[];
-  relatedTerms: { id: string; name: string; description: string }[];
-  advancedTopics: { id: string; name: string; description: string; difficulty: 'intermediate' | 'advanced' }[];
-  quiz: { question: string; options: string[]; correctIndex: number; explanation: string }[];
+const DEEP_DIVE_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// ============================================
+// TYPES
+// ============================================
+
+/** Shape returned by /api/deep-dive (single level) */
+interface APIDeepDiveContent {
+  oneLiner: string;
+  analogy: string;
+  explanation: string;
+  howItWorks: string;
+  diagram: string;
+  codeExample?: {
+    language: string;
+    code: string;
+    explanation: string;
+    runnable?: boolean;
+  };
+  commonMisconceptions: {
+    wrong: string;
+    right: string;
+    explanation: string;
+  }[];
+  relatedTerms: {
+    termId: string;
+    termName: string;
+    relationship: string;
+  }[];
+  advancedTopics: {
+    id: string;
+    title: string;
+    description: string;
+    difficulty: string;
+    prerequisites?: string[];
+    hasDeepDive?: boolean;
+  }[];
+  quiz: {
+    id?: string;
+    question: string;
+    options: string[];
+    correctIndex?: number;
+    correctAnswer?: number;
+    explanation: string;
+  }[];
+  estimatedMinutes: number;
 }
 
-// Mock deep dive content - in production, this would come from API/database
-const deepDiveContent: Record<string, DeepDiveContent> = {
-  'embeddings': {
-    term: 'Embeddings',
-    slug: 'embeddings',
-    fromLessonId: 'lesson-03',
-    fromLessonTitle: 'Embeddings & Vector Search',
-    oneLiner: {
-      beginner: 'Numbers that capture the meaning of text, like GPS coordinates for ideas.',
-      intermediate: 'Dense vector representations of text that encode semantic meaning in continuous space.',
-      advanced: 'Learned projections from discrete token sequences to continuous vector manifolds via transformer architectures.',
-    },
-    analogy: {
-      beginner: {
-        title: 'The Library Map',
-        content: 'Imagine a library where books aren\'t organized alphabetically, but by what they\'re about. Cookbooks are near nutrition guides. Mystery novels are near crime documentaries. [Embeddings] work the same way - they place similar ideas close together in a mathematical space.',
-      },
-      intermediate: {
-        title: 'Semantic Coordinates',
-        content: 'Think of embeddings as coordinates in a meaning-space. Just like GPS coordinates (latitude, longitude) tell you where something is physically, embedding coordinates tell you where something is semantically. "Happy" and "joyful" have nearby coordinates; "happy" and "refrigerator" are far apart.',
-      },
-      advanced: {
-        title: 'Manifold Projection',
-        content: 'Embeddings project the discrete, high-dimensional space of all possible token sequences onto a smooth, continuous manifold. This learned projection preserves semantic relationships as geometric relationships - analogies become vector arithmetic (king - man + woman ≈ queen).',
-      },
-    },
-    howItWorks: {
-      beginner: {
-        content: 'When you give text to an embedding model, it reads every word and outputs a list of numbers (usually 768-1536 of them). These numbers together form a unique "fingerprint" for that text\'s meaning.\n\nThe magic: similar meanings get similar numbers! So when you search for something, the system finds texts with matching fingerprints.',
-        diagram: `flowchart LR
-    A["Your Text"] --> B[Embedding Model]
-    B --> C["[0.2, -0.5, 0.8, ...]<br/>768+ numbers"]
-    D["Similar Text"] --> B
-    B --> E["[0.3, -0.4, 0.7, ...]<br/>Similar numbers!"]
-    C -.->|"Close in space"| E`,
-      },
-      intermediate: {
-        content: 'Embedding models use [transformer] architectures trained on massive text corpora. The model processes text through multiple attention layers, then applies mean pooling (or uses the [CLS] token) to produce a fixed-size vector.\n\nThe training objective ensures semantically similar inputs map to nearby points in the embedding space, typically measured by [cosine similarity].',
-        diagram: `flowchart TB
-    A[Input Text] --> B[Tokenizer]
-    B --> C[Token IDs]
-    C --> D[Embedding Layer]
-    D --> E[Transformer Blocks]
-    E --> F[Mean Pooling]
-    F --> G["Dense Vector<br/>[768-1536 dims]"]
+interface TermInfo {
+  termName: string;
+  fromLessonId: string;
+  fromLessonTitle: string;
+  fromLessonSlug: string;
+}
 
-    subgraph Training
-    H[Contrastive Loss]
-    I[Similar pairs → close]
-    J[Different pairs → far]
-    end`,
-      },
-      advanced: {
-        content: 'Modern embedding models like Voyage AI, OpenAI\'s text-embedding-3, and Cohere\'s embed-v3 use transformer encoders with task-specific fine-tuning. Training employs contrastive objectives (InfoNCE, SimCLR) on curated datasets of semantic similarity pairs.\n\n[Matryoshka embeddings] enable variable dimensionality by training the model to preserve information in prefixes of the full vector. [HNSW] indices enable sub-linear approximate nearest neighbor retrieval.',
-        diagram: `flowchart TB
-    subgraph Encoder
-    A[Input] --> B[BPE Tokenization]
-    B --> C[Positional Encoding]
-    C --> D[Multi-Head Self-Attention x12]
-    D --> E[Layer Normalization]
-    E --> F[Pooling Strategy]
-    end
+// ============================================
+// HELPERS
+// ============================================
 
-    F --> G[L2 Normalization]
-    G --> H["Unit Vector ∈ S^{d-1}"]
+/**
+ * Look up a term's display name and origin lesson from lesson data.
+ * Searches all lessons for a term matching the slug.
+ */
+function findTermInfo(termSlug: string): TermInfo | null {
+  const lessonMeta: Record<string, { id: string; title: string; slug: string }> = {
+    '01-how-ai-works': { id: 'lesson-01', title: 'How AI Works', slug: '01-how-ai-works' },
+    '02-prompt-engineering': { id: 'lesson-02', title: 'Prompt Engineering', slug: '02-prompt-engineering' },
+    '03-embeddings': { id: 'lesson-03', title: 'Embeddings & Vector Search', slug: '03-embeddings' },
+    '04-rag': { id: 'lesson-04', title: 'RAG', slug: '04-rag' },
+    '05-agents': { id: 'lesson-05', title: 'Agents & Tools', slug: '05-agents' },
+  };
 
-    subgraph Retrieval
-    I[Query Vector] --> J[HNSW Index]
-    J --> K[ANN Search]
-    K --> L[Top-K Results]
-    end`,
-      },
-    },
-    codeExample: {
-      beginner: {
-        language: 'python',
-        code: `# Simple embedding example with OpenAI
-from openai import OpenAI
-client = OpenAI()
+  for (const [lessonKey, lesson] of Object.entries(lessonData)) {
+    const meta = lessonMeta[lessonKey];
+    if (!meta) continue;
 
-# Get embedding for a sentence
-response = client.embeddings.create(
-    model="text-embedding-3-small",
-    input="I love learning about AI!"
-)
+    const term = lesson.terms.find((t) => t.slug === termSlug || t.id === termSlug);
+    if (term) {
+      return {
+        termName: term.term,
+        fromLessonId: meta.id,
+        fromLessonTitle: meta.title,
+        fromLessonSlug: meta.slug,
+      };
+    }
+  }
 
-# This is your embedding - a list of numbers
-embedding = response.data[0].embedding
-print(f"Got {len(embedding)} numbers!")  # 1536 numbers`,
-        explanation: 'This creates an embedding for one sentence. The result is a list of 1536 numbers that represent the meaning.',
-      },
-      intermediate: {
-        language: 'python',
-        code: `import numpy as np
-from openai import OpenAI
-client = OpenAI()
+  return null;
+}
 
-def get_embeddings(texts: list[str]) -> np.ndarray:
-    """Get embeddings for multiple texts."""
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=texts
-    )
-    return np.array([d.embedding for d in response.data])
-
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Calculate cosine similarity between two vectors."""
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-# Example: Find similar sentences
-sentences = [
-    "The cat sat on the mat",
-    "A feline rested on the rug",
-    "The stock market crashed today"
-]
-
-embeddings = get_embeddings(sentences)
-sim_01 = cosine_similarity(embeddings[0], embeddings[1])  # ~0.85
-sim_02 = cosine_similarity(embeddings[0], embeddings[2])  # ~0.15`,
-        explanation: 'This shows how to embed multiple texts and compare their similarity. Similar sentences get high scores (close to 1), different topics get low scores.',
-      },
-      advanced: {
-        language: 'python',
-        code: `import voyageai
-import numpy as np
-from typing import List
-from dataclasses import dataclass
-
-@dataclass
-class EmbeddingConfig:
-    model: str = "voyage-large-2"
-    input_type: str = "document"  # or "query" for asymmetric
-    truncation: bool = True
-
-class SemanticEncoder:
-    def __init__(self, config: EmbeddingConfig):
-        self.client = voyageai.Client()
-        self.config = config
-
-    def encode(self, texts: List[str], batch_size: int = 128) -> np.ndarray:
-        """Encode texts with batching and proper input typing."""
-        all_embeddings = []
-
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            result = self.client.embed(
-                batch,
-                model=self.config.model,
-                input_type=self.config.input_type,
-                truncation=self.config.truncation
-            )
-            all_embeddings.extend(result.embeddings)
-
-        embeddings = np.array(all_embeddings)
-        # L2 normalize for cosine similarity via dot product
-        return embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-
-    def encode_query(self, query: str) -> np.ndarray:
-        """Encode a search query with query-specific input type."""
-        result = self.client.embed(
-            [query],
-            model=self.config.model,
-            input_type="query"  # Asymmetric - queries encoded differently
-        )
-        embedding = np.array(result.embeddings[0])
-        return embedding / np.linalg.norm(embedding)`,
-        explanation: 'Production-grade encoder with batching, asymmetric query/document encoding, and L2 normalization for efficient similarity computation.',
-      },
-    },
-    misconceptions: [
-      {
-        myth: 'Embeddings understand meaning like humans do',
-        reality: 'Embeddings capture statistical patterns of word co-occurrence, not true understanding. They\'re powerful approximations of meaning, not comprehension.',
-      },
-      {
-        myth: 'Bigger embedding dimensions are always better',
-        reality: 'Larger dimensions capture more nuance but increase storage costs and can overfit. 768-1536 dimensions is usually the sweet spot.',
-      },
-      {
-        myth: 'All embedding models work the same',
-        reality: 'Different models are trained on different data with different objectives. Domain-specific models often outperform general ones for specialized tasks.',
-      },
-    ],
-    relatedTerms: [
-      { id: 'vector-database', name: 'Vector Database', description: 'Stores and searches embeddings efficiently' },
-      { id: 'cosine-similarity', name: 'Cosine Similarity', description: 'Measures how similar two embeddings are' },
-      { id: 'chunking', name: 'Chunking', description: 'Splitting text before embedding' },
-      { id: 'semantic-search', name: 'Semantic Search', description: 'Finding content by meaning, not keywords' },
-    ],
-    advancedTopics: [
-      { id: 'matryoshka-embeddings', name: 'Matryoshka Embeddings', description: 'Variable-dimension embeddings for efficiency', difficulty: 'advanced' },
-      { id: 'fine-tuning-embeddings', name: 'Fine-tuning Embeddings', description: 'Adapting models to your domain', difficulty: 'advanced' },
-      { id: 'multimodal-embeddings', name: 'Multimodal Embeddings', description: 'Embedding images and text together', difficulty: 'intermediate' },
-    ],
-    quiz: [
-      {
-        question: 'What do embeddings represent?',
-        options: [
-          'The exact words in a text',
-          'The meaning/semantics of text as numbers',
-          'The grammar structure of sentences',
-          'The author of the text',
-        ],
-        correctIndex: 1,
-        explanation: 'Embeddings convert text into numerical vectors that capture semantic meaning, allowing computers to understand similarity between concepts.',
-      },
-      {
-        question: 'If two texts have similar embeddings, what does that mean?',
-        options: [
-          'They have the same words',
-          'They were written by the same person',
-          'They have similar meanings',
-          'They have the same length',
-        ],
-        correctIndex: 2,
-        explanation: 'Similar embeddings indicate semantic similarity - the texts are about similar topics or express similar ideas, even if they use different words.',
-      },
-    ],
-  },
-  'vector-database': {
-    term: 'Vector Database',
-    slug: 'vector-database',
-    fromLessonId: 'lesson-03',
-    fromLessonTitle: 'Embeddings & Vector Search',
-    oneLiner: {
-      beginner: 'A special database that organizes information by meaning instead of keywords.',
-      intermediate: 'A database optimized for storing embeddings and performing fast similarity search using ANN algorithms.',
-      advanced: 'Specialized data stores implementing approximate nearest neighbor indices (HNSW, IVF) for sub-linear similarity retrieval.',
-    },
-    analogy: {
-      beginner: {
-        title: 'The Smart Library',
-        content: 'Imagine a library where you can say "I want books about overcoming challenges" and it finds relevant books even if none have those exact words in their titles. That\'s what a [vector database] does - it finds things by meaning.',
-      },
-      intermediate: {
-        title: 'Semantic GPS',
-        content: 'A vector database is like Google Maps for meaning. Just as Maps can quickly find restaurants near your location among millions of places, a vector database finds content semantically near your query among millions of [embeddings].',
-      },
-      advanced: {
-        title: 'Approximate Geometry',
-        content: 'Vector databases trade exact nearest-neighbor guarantees for dramatic speedups. HNSW builds navigable small-world graphs; IVF partitions space into Voronoi cells. Both achieve sub-linear query time with tunable recall.',
-      },
-    },
-    howItWorks: {
-      beginner: {
-        content: 'When you add a document:\n1. It gets converted to numbers ([embeddings])\n2. The database stores these numbers in a special structure\n3. When you search, your query also becomes numbers\n4. The database quickly finds the closest matches',
-        diagram: `flowchart TB
-    subgraph Adding
-    A[Document] --> B[Embedding]
-    B --> C[Store in Database]
-    end
-
-    subgraph Searching
-    D[Query] --> E[Embedding]
-    E --> F[Find Similar]
-    F --> G[Return Results]
-    end`,
-      },
-      intermediate: {
-        content: 'Vector databases use [approximate nearest neighbor] (ANN) algorithms instead of brute-force search. Popular approaches:\n\n- **HNSW**: Builds a graph where similar vectors are connected\n- **IVF**: Clusters vectors and searches relevant clusters only\n- **Product Quantization**: Compresses vectors for memory efficiency',
-        diagram: `flowchart TB
-    subgraph "HNSW Index"
-    A((Query)) --> B((Hop 1))
-    B --> C((Hop 2))
-    C --> D((Result))
-    A -.-> E[("Skip far nodes")]
-    end
-
-    subgraph "IVF Index"
-    F[Query] --> G{Find Cluster}
-    G --> H[Cluster A]
-    G --> I[Cluster B]
-    H --> J[Search within]
-    end`,
-      },
-      advanced: {
-        content: 'Modern vector databases implement hybrid indices combining:\n\n- **HNSW** with configurable M (connections) and efConstruction\n- **Scalar/Product Quantization** for memory reduction (16x compression)\n- **Filtered search** with predicate pushdown\n- **Multi-tenancy** with namespace isolation\n\nKey tradeoffs: recall vs latency, memory vs accuracy, build time vs query time.',
-      },
-    },
-    misconceptions: [
-      {
-        myth: 'Vector databases replace traditional databases',
-        reality: 'They complement traditional databases. You often need both - SQL for structured data, vectors for semantic search.',
-      },
-      {
-        myth: 'You need millions of vectors to benefit',
-        reality: 'Even with thousands of vectors, semantic search beats keyword matching. Scale doesn\'t determine usefulness.',
-      },
-    ],
-    relatedTerms: [
-      { id: 'embeddings', name: 'Embeddings', description: 'The vectors stored in the database' },
-      { id: 'hnsw', name: 'HNSW', description: 'Graph-based nearest neighbor algorithm' },
-      { id: 'cosine-similarity', name: 'Cosine Similarity', description: 'How similarity is measured' },
-    ],
-    advancedTopics: [
-      { id: 'hybrid-search', name: 'Hybrid Search', description: 'Combining vector and keyword search', difficulty: 'intermediate' },
-      { id: 'filtered-vector-search', name: 'Filtered Vector Search', description: 'Adding metadata constraints', difficulty: 'advanced' },
-    ],
-    quiz: [
-      {
-        question: 'What makes vector databases different from traditional databases?',
-        options: [
-          'They are faster at everything',
-          'They find results by meaning similarity, not exact matches',
-          'They can only store text',
-          'They don\'t need indexes',
-        ],
-        correctIndex: 1,
-        explanation: 'Vector databases excel at semantic similarity search - finding content with similar meaning rather than exact keyword matches.',
-      },
-    ],
-  },
-};
+/**
+ * Convert a slug to a readable display name
+ * e.g. "cosine-similarity" → "Cosine Similarity"
+ */
+function slugToDisplayName(slug: string): string {
+  return slug
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
 // Level configuration
 const levelConfig: Record<UserLevel, { label: string; color: string; bgColor: string; borderColor: string }> = {
@@ -363,36 +136,285 @@ const levelConfig: Record<UserLevel, { label: string; color: string; bgColor: st
   advanced: { label: 'Advanced', color: 'text-pink-700', bgColor: 'bg-pink-100', borderColor: 'border-pink-200' },
 };
 
+// ============================================
+// LOADING SKELETON
+// ============================================
+
+function DeepDiveSkeleton() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-100 sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
+              <ChevronRight className="w-4 h-4 text-gray-300" />
+              <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+              <ChevronRight className="w-4 h-4 text-gray-300" />
+              <div className="h-4 w-24 bg-gray-200 rounded animate-pulse" />
+            </div>
+            <div className="flex gap-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-8 w-24 bg-gray-200 rounded-full animate-pulse" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto px-6 py-8">
+        {/* Hero skeleton */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-gray-200 rounded-xl animate-pulse" />
+            <div className="h-6 w-20 bg-gray-200 rounded-full animate-pulse" />
+          </div>
+          <div className="h-10 w-64 bg-gray-200 rounded animate-pulse mb-4" />
+          <div className="h-6 w-full bg-gray-100 rounded animate-pulse" />
+        </div>
+
+        {/* Generating indicator */}
+        <div className="bg-gradient-to-br from-primary-50 to-blue-50 rounded-2xl border border-primary-100 p-8 mb-8">
+          <div className="flex flex-col items-center justify-center py-8">
+            <div className="relative mb-6">
+              <Sparkles className="w-12 h-12 text-primary-400 animate-pulse" />
+              <Loader2 className="w-6 h-6 text-primary-500 animate-spin absolute -right-2 -bottom-1" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Generating Deep Dive...</h3>
+            <p className="text-gray-600 text-center max-w-md">
+              AI is crafting a comprehensive explanation with analogies, code examples, diagrams, and quizzes.
+              This usually takes 5-10 seconds.
+            </p>
+          </div>
+        </div>
+
+        {/* Content skeletons */}
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8">
+            <div className="h-6 w-40 bg-gray-200 rounded animate-pulse mb-6" />
+            <div className="space-y-3">
+              <div className="h-4 w-full bg-gray-100 rounded animate-pulse" />
+              <div className="h-4 w-5/6 bg-gray-100 rounded animate-pulse" />
+              <div className="h-4 w-4/6 bg-gray-100 rounded animate-pulse" />
+            </div>
+          </div>
+        ))}
+      </main>
+    </div>
+  );
+}
+
+// ============================================
+// ERROR STATE
+// ============================================
+
+function DeepDiveError({
+  termName,
+  error,
+  onRetry,
+  onBack,
+}: {
+  termName: string;
+  error: string;
+  onRetry: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center max-w-md">
+        <AlertTriangle className="w-16 h-16 text-amber-400 mx-auto mb-4" />
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          Couldn&apos;t generate deep dive
+        </h1>
+        <p className="text-gray-600 mb-2">
+          We had trouble generating the deep dive for &ldquo;{termName}&rdquo;.
+        </p>
+        <p className="text-gray-500 text-sm mb-6">{error}</p>
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={onBack}
+            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            Go Back
+          </button>
+          <button
+            onClick={onRetry}
+            className="px-6 py-3 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition-colors flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Try Again
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// MAIN PAGE COMPONENT
+// ============================================
+
 export default function TermDeepDivePage() {
   const params = useParams();
   const router = useRouter();
   const termSlug = params.termSlug as string;
 
-  const { currentLevel, setLevel, updateExploration, hasExplored } = useUserStore();
-  const { breadcrumbs, setBreadcrumbs, currentLessonId } = useNavigationStore();
+  const { currentLevel, setLevel, updateExploration, hasExplored, profile, saveQuizScore } = useUserStore();
+  const { setBreadcrumbs, currentLessonId } = useNavigationStore();
 
+  // Content state
+  const [content, setContent] = useState<APIDeepDiveContent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Quiz state
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [showResults, setShowResults] = useState<Record<number, boolean>>({});
+  const [quizCompleted, setQuizCompleted] = useState(false);
+  const [quizScore, setQuizScore] = useState<number | null>(null);
 
-  // Get content for this term
-  const content = deepDiveContent[termSlug];
+  // Cache: store fetched content per level to avoid re-fetching on level toggle
+  const contentCache = useRef<Partial<Record<UserLevel, APIDeepDiveContent>>>({});
 
-  // Update breadcrumbs and track deep dive view
-  useEffect(() => {
-    if (content) {
-      setBreadcrumbs([
-        { label: 'Course', href: '/course', type: 'course' },
-        { label: content.fromLessonTitle, href: `/course/${content.fromLessonId.replace('lesson-', '')}`, type: 'lesson' },
-        { label: content.term, href: `/course/term/${termSlug}`, type: 'term' },
-      ]);
+  // Resolve term info from lesson data
+  const termInfo = findTermInfo(termSlug);
+  const termName = termInfo?.termName ?? slugToDisplayName(termSlug);
+  const fromLessonId = termInfo?.fromLessonId ?? currentLessonId ?? 'lesson-01';
+  const fromLessonTitle = termInfo?.fromLessonTitle ?? 'Course';
+  const fromLessonSlug = termInfo?.fromLessonSlug ?? '01-how-ai-works';
 
-      // Mark deep dive as viewed
-      if (hasExplored(termSlug)) {
-        updateExploration(termSlug, { deepDiveViewedAt: new Date() });
+  // Get explored terms for context
+  const exploredTermIds = (profile?.explorations || []).map((e) => e.termId);
+
+  /**
+   * Fetch deep dive content from the API
+   * Caching priority: useRef (instant) → localStorage (fast) → API (slow)
+   */
+  const fetchDeepDive = useCallback(
+    async (level: UserLevel) => {
+      const cacheKey = `deepdive:${termSlug}:${level}`;
+
+      // 1. Check in-memory cache first (instant, same session)
+      if (contentCache.current[level]) {
+        setContent(contentCache.current[level]!);
+        setLoading(false);
+        setError(null);
+        return;
       }
+
+      // 2. Check localStorage cache (fast, cross-session)
+      const cached = getCached<APIDeepDiveContent>(cacheKey);
+      if (cached) {
+        // Store in memory cache too for instant access within session
+        contentCache.current[level] = cached;
+        setContent(cached);
+        setLoading(false);
+        setError(null);
+        return;
+      }
+
+      // 3. Fetch from API (slow)
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch('/api/deep-dive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            termId: termSlug,
+            term: termName,
+            level,
+            context: {
+              fromLessonId,
+              exploredTerms: exploredTermIds,
+              userLevel: level,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData.error || `Server error (${response.status})`
+          );
+        }
+
+        const data = await response.json();
+        const deepDiveContent: APIDeepDiveContent = data.content;
+
+        // Cache in memory (instant access within session)
+        contentCache.current[level] = deepDiveContent;
+
+        // Cache in localStorage (persists across sessions)
+        setCache(cacheKey, deepDiveContent, DEEP_DIVE_CACHE_TTL);
+
+        setContent(deepDiveContent);
+        setError(null);
+      } catch (err) {
+        console.error('Deep dive fetch error:', err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'An unexpected error occurred. Please try again.'
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [termSlug, termName, fromLessonId]
+  );
+
+  // Fetch on mount and when level changes
+  useEffect(() => {
+    fetchDeepDive(currentLevel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLevel, termSlug]);
+
+  // Update breadcrumbs
+  useEffect(() => {
+    setBreadcrumbs([
+      { label: 'Course', href: '/course', type: 'course' },
+      { label: fromLessonTitle, href: `/course/${fromLessonSlug}`, type: 'lesson' },
+      { label: termName, href: `/course/term/${termSlug}`, type: 'term' },
+    ]);
+  }, [termSlug, termName, fromLessonTitle, fromLessonSlug, setBreadcrumbs]);
+
+  // Track deep dive view
+  useEffect(() => {
+    if (content && hasExplored(termSlug)) {
+      updateExploration(termSlug, { deepDiveViewedAt: new Date() });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, termSlug]);
 
+  // Reset quiz when level changes
+  useEffect(() => {
+    setSelectedAnswers({});
+    setShowResults({});
+    setQuizCompleted(false);
+    setQuizScore(null);
+  }, [currentLevel]);
+
+  // --- Loading State ---
+  if (loading && !content) {
+    return <DeepDiveSkeleton />;
+  }
+
+  // --- Error State ---
+  if (error && !content) {
+    return (
+      <DeepDiveError
+        termName={termName}
+        error={error}
+        onRetry={() => fetchDeepDive(currentLevel)}
+        onBack={() => router.back()}
+      />
+    );
+  }
+
+  // --- No Content (shouldn't happen if API is working) ---
   if (!content) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -400,8 +422,7 @@ export default function TermDeepDivePage() {
           <Sparkles className="w-16 h-16 text-primary-300 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Deep Dive Coming Soon</h1>
           <p className="text-gray-600 mb-6">
-            We're preparing an in-depth exploration of "{termSlug}".
-            In production, this would be AI-generated with the same quality as hand-crafted content.
+            We&apos;re preparing an in-depth exploration of &ldquo;{termName}&rdquo;.
           </p>
           <button
             onClick={() => router.back()}
@@ -414,11 +435,43 @@ export default function TermDeepDivePage() {
     );
   }
 
+  // --- Quiz Handlers ---
   const handleQuizAnswer = (questionIndex: number, optionIndex: number) => {
-    setSelectedAnswers(prev => ({ ...prev, [questionIndex]: optionIndex }));
-    setShowResults(prev => ({ ...prev, [questionIndex]: true }));
+    setSelectedAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }));
+    setShowResults((prev) => ({ ...prev, [questionIndex]: true }));
   };
 
+  const allQuestionsAnswered = content.quiz.length > 0 &&
+    content.quiz.every((_, idx) => selectedAnswers[idx] !== undefined);
+
+  const calculateQuizScore = (): number | null => {
+    if (!content.quiz.length || !allQuestionsAnswered) return null;
+
+    const correctCount = content.quiz.reduce((count, q, idx) => {
+      const correctIdx = q.correctIndex ?? q.correctAnswer ?? 0;
+      return selectedAnswers[idx] === correctIdx ? count + 1 : count;
+    }, 0);
+
+    return Math.round((correctCount / content.quiz.length) * 100);
+  };
+
+  const handleSubmitQuiz = () => {
+    const score = calculateQuizScore();
+    if (score === null) return;
+
+    setQuizScore(score);
+    setQuizCompleted(true);
+    saveQuizScore(termSlug, score);
+  };
+
+  const handleRetakeQuiz = () => {
+    setSelectedAnswers({});
+    setShowResults({});
+    setQuizCompleted(false);
+    setQuizScore(null);
+  };
+
+  // --- Main Render ---
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -432,13 +485,13 @@ export default function TermDeepDivePage() {
               </Link>
               <ChevronRight className="w-4 h-4 text-gray-300" />
               <Link
-                href={`/course/${content.fromLessonId.replace('lesson-', '')}`}
+                href={`/course/${fromLessonSlug}`}
                 className="text-gray-500 hover:text-gray-700"
               >
-                {content.fromLessonTitle}
+                {fromLessonTitle}
               </Link>
               <ChevronRight className="w-4 h-4 text-gray-300" />
-              <span className="text-gray-900 font-medium">{content.term}</span>
+              <span className="text-gray-900 font-medium">{termName}</span>
             </div>
 
             {/* Level Selector */}
@@ -463,9 +516,27 @@ export default function TermDeepDivePage() {
         </div>
       </header>
 
+      {/* Loading overlay when switching levels */}
+      <AnimatePresence>
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-white/60 z-30 flex items-center justify-center"
+          >
+            <div className="flex items-center gap-3 bg-white px-6 py-4 rounded-2xl shadow-lg border border-gray-100">
+              <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+              <span className="text-gray-700 font-medium">Switching to {levelConfig[currentLevel].label}...</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Content */}
       <main className="max-w-4xl mx-auto px-6 py-8">
         <motion.div
+          key={`${termSlug}-${currentLevel}`}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
@@ -479,15 +550,16 @@ export default function TermDeepDivePage() {
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${levelConfig[currentLevel].bgColor} ${levelConfig[currentLevel].color}`}>
                 Deep Dive
               </span>
+              {content.estimatedMinutes && (
+                <span className="text-sm text-gray-500 ml-auto">
+                  ~{content.estimatedMinutes} min read
+                </span>
+              )}
             </div>
 
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              {content.term}
-            </h1>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">{termName}</h1>
 
-            <p className="text-xl text-gray-600">
-              {content.oneLiner[currentLevel]}
-            </p>
+            <p className="text-xl text-gray-600">{content.oneLiner}</p>
           </div>
 
           {/* Analogy Section */}
@@ -499,16 +571,27 @@ export default function TermDeepDivePage() {
           >
             <div className="flex items-center gap-2 mb-4">
               <Lightbulb className="w-6 h-6 text-primary-500" />
-              <h2 className="text-xl font-bold text-gray-900">
-                {content.analogy[currentLevel].title}
-              </h2>
+              <h2 className="text-xl font-bold text-gray-900">The Analogy</h2>
             </div>
-            <p className="text-gray-700 leading-relaxed">
-              {renderContentWithTerms(content.analogy[currentLevel].content)}
-            </p>
+            <MarkdownContent content={content.analogy} className="text-gray-700" />
           </motion.section>
 
-          {/* How It Works */}
+          {/* Explanation */}
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8"
+          >
+            <div className="flex items-center gap-2 mb-6">
+              <BookOpen className="w-6 h-6 text-primary-500" />
+              <h2 className="text-xl font-bold text-gray-900">Explanation</h2>
+            </div>
+
+            <MarkdownContent content={content.explanation} className="prose prose-gray max-w-none" />
+          </motion.section>
+
+          {/* How It Works + Diagram */}
           <motion.section
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -520,23 +603,17 @@ export default function TermDeepDivePage() {
               <h2 className="text-xl font-bold text-gray-900">How It Works</h2>
             </div>
 
-            <div className="prose prose-gray max-w-none">
-              {content.howItWorks[currentLevel].content.split('\n\n').map((para, i) => (
-                <p key={i} className="text-gray-700 leading-relaxed mb-4">
-                  {renderContentWithTerms(para)}
-                </p>
-              ))}
-            </div>
+            <MarkdownContent content={content.howItWorks} className="prose prose-gray max-w-none" />
 
-            {content.howItWorks[currentLevel].diagram && (
+            {content.diagram && (
               <div className="mt-6">
-                <MermaidDiagram chart={content.howItWorks[currentLevel].diagram!} />
+                <MermaidDiagram chart={content.diagram} />
               </div>
             )}
           </motion.section>
 
           {/* Code Example */}
-          {content.codeExample && content.codeExample[currentLevel] && (
+          {content.codeExample && (
             <motion.section
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -548,79 +625,86 @@ export default function TermDeepDivePage() {
                 <h2 className="text-xl font-bold text-gray-900">Code Example</h2>
               </div>
 
-              <pre className="bg-gray-900 text-gray-100 rounded-xl p-6 overflow-x-auto text-sm mb-4">
-                <code className={`language-${content.codeExample[currentLevel].language}`}>
-                  {content.codeExample[currentLevel].code}
-                </code>
-              </pre>
+              <CodeBlock
+                code={content.codeExample.code}
+                language={content.codeExample.language}
+                className="mb-4"
+              />
 
-              <p className="text-gray-600 text-sm">
-                {content.codeExample[currentLevel].explanation}
-              </p>
+              <p className="text-gray-600 text-sm">{content.codeExample.explanation}</p>
             </motion.section>
           )}
 
           {/* Common Misconceptions */}
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8"
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <AlertTriangle className="w-6 h-6 text-amber-500" />
-              <h2 className="text-xl font-bold text-gray-900">Common Misconceptions</h2>
-            </div>
+          {content.commonMisconceptions.length > 0 && (
+            <motion.section
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8"
+            >
+              <div className="flex items-center gap-2 mb-6">
+                <AlertTriangle className="w-6 h-6 text-amber-500" />
+                <h2 className="text-xl font-bold text-gray-900">Common Misconceptions</h2>
+              </div>
 
-            <div className="space-y-4">
-              {content.misconceptions.map((item, index) => (
-                <div key={index} className="border border-gray-100 rounded-xl overflow-hidden">
-                  <div className="bg-red-50 px-4 py-3 border-b border-red-100">
-                    <p className="text-red-800 font-medium">
-                      <span className="text-red-500">Myth:</span> {item.myth}
-                    </p>
+              <div className="space-y-4">
+                {content.commonMisconceptions.map((item, index) => (
+                  <div key={index} className="border border-gray-100 rounded-xl overflow-hidden">
+                    <div className="bg-red-50 px-4 py-3 border-b border-red-100">
+                      <p className="text-red-800 font-medium">
+                        <span className="text-red-500">Myth:</span> {item.wrong}
+                      </p>
+                    </div>
+                    <div className="bg-green-50 px-4 py-3">
+                      <p className="text-green-800">
+                        <span className="text-green-600 font-medium">Reality:</span> {item.right}
+                      </p>
+                    </div>
+                    {item.explanation && (
+                      <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
+                        <p className="text-gray-600 text-sm">{item.explanation}</p>
+                      </div>
+                    )}
                   </div>
-                  <div className="bg-green-50 px-4 py-3">
-                    <p className="text-green-800">
-                      <span className="text-green-600 font-medium">Reality:</span> {item.reality}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.section>
+                ))}
+              </div>
+            </motion.section>
+          )}
 
           {/* Related Terms - THE RABBIT HOLE */}
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8"
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <Link2 className="w-6 h-6 text-primary-500" />
-              <h2 className="text-xl font-bold text-gray-900">Related Terms</h2>
-              <span className="text-sm text-gray-500 ml-2">Click to explore</span>
-            </div>
+          {content.relatedTerms.length > 0 && (
+            <motion.section
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8"
+            >
+              <div className="flex items-center gap-2 mb-6">
+                <Link2 className="w-6 h-6 text-primary-500" />
+                <h2 className="text-xl font-bold text-gray-900">Related Terms</h2>
+                <span className="text-sm text-gray-500 ml-2">Click to explore</span>
+              </div>
 
-            <div className="grid md:grid-cols-2 gap-4">
-              {content.relatedTerms.map((term) => (
-                <Link
-                  key={term.id}
-                  href={`/course/term/${term.id}`}
-                  className="group p-4 border border-gray-200 rounded-xl hover:border-primary-300 hover:shadow-md transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
-                      {term.name}
-                    </h3>
-                    <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary-500 transition-colors" />
-                  </div>
-                  <p className="text-sm text-gray-500 mt-1">{term.description}</p>
-                </Link>
-              ))}
-            </div>
-          </motion.section>
+              <div className="grid md:grid-cols-2 gap-4">
+                {content.relatedTerms.map((term) => (
+                  <Link
+                    key={term.termId}
+                    href={`/course/term/${term.termId}`}
+                    className="group p-4 border border-gray-200 rounded-xl hover:border-primary-300 hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
+                        {term.termName}
+                      </h3>
+                      <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary-500 transition-colors" />
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">{term.relationship}</p>
+                  </Link>
+                ))}
+              </div>
+            </motion.section>
+          )}
 
           {/* Advanced Topics - MORE RABBIT HOLES */}
           {content.advancedTopics.length > 0 && (
@@ -644,7 +728,7 @@ export default function TermDeepDivePage() {
                   >
                     <div>
                       <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
-                        {topic.name}
+                        {topic.title}
                       </h3>
                       <p className="text-sm text-gray-500 mt-1">{topic.description}</p>
                     </div>
@@ -653,7 +737,9 @@ export default function TermDeepDivePage() {
                         px-2 py-1 rounded text-xs font-medium
                         ${topic.difficulty === 'intermediate'
                           ? 'bg-amber-100 text-amber-700'
-                          : 'bg-pink-100 text-pink-700'}
+                          : topic.difficulty === 'beginner'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-pink-100 text-pink-700'}
                       `}>
                         {topic.difficulty}
                       </span>
@@ -666,85 +752,155 @@ export default function TermDeepDivePage() {
           )}
 
           {/* Quiz Section */}
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7 }}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8"
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <Trophy className="w-6 h-6 text-amber-500" />
-              <h2 className="text-xl font-bold text-gray-900">Quick Quiz</h2>
-            </div>
+          {content.quiz.length > 0 && (
+            <motion.section
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.7 }}
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8"
+            >
+              <div className="flex items-center gap-2 mb-6">
+                <Trophy className="w-6 h-6 text-amber-500" />
+                <h2 className="text-xl font-bold text-gray-900">Quick Quiz</h2>
+              </div>
 
-            <div className="space-y-8">
-              {content.quiz.map((q, qIndex) => (
-                <div key={qIndex} className="space-y-4">
-                  <p className="font-medium text-gray-900">
-                    {qIndex + 1}. {q.question}
-                  </p>
+              <div className="space-y-8">
+                {content.quiz.map((q, qIndex) => (
+                  <div key={q.id || qIndex} className="space-y-4">
+                    <p className="font-medium text-gray-900">
+                      {qIndex + 1}. {q.question}
+                    </p>
 
-                  <div className="space-y-2">
-                    {q.options.map((option, oIndex) => {
-                      const isSelected = selectedAnswers[qIndex] === oIndex;
-                      const isCorrect = oIndex === q.correctIndex;
-                      const showResult = showResults[qIndex];
+                    <div className="space-y-2">
+                      {q.options.map((option, oIndex) => {
+                        const isSelected = selectedAnswers[qIndex] === oIndex;
+                        const correctIdx = q.correctIndex ?? q.correctAnswer ?? 0;
+                        const isCorrect = oIndex === correctIdx;
+                        const showResult = showResults[qIndex];
 
-                      return (
-                        <button
-                          key={oIndex}
-                          onClick={() => !showResult && handleQuizAnswer(qIndex, oIndex)}
-                          disabled={showResult}
-                          className={`
-                            w-full text-left p-4 rounded-xl border-2 transition-all
-                            ${showResult
-                              ? isCorrect
-                                ? 'border-green-500 bg-green-50'
+                        return (
+                          <button
+                            key={oIndex}
+                            onClick={() => !showResult && handleQuizAnswer(qIndex, oIndex)}
+                            disabled={showResult}
+                            className={`
+                              w-full text-left p-4 rounded-xl border-2 transition-all
+                              ${showResult
+                                ? isCorrect
+                                  ? 'border-green-500 bg-green-50'
+                                  : isSelected
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-gray-200'
                                 : isSelected
-                                  ? 'border-red-500 bg-red-50'
-                                  : 'border-gray-200'
-                              : isSelected
-                                ? 'border-primary-500 bg-primary-50'
-                                : 'border-gray-200 hover:border-gray-300'
-                            }
-                          `}
-                        >
-                          <div className="flex items-center gap-3">
-                            {showResult ? (
-                              isCorrect ? (
-                                <CheckCircle className="w-5 h-5 text-green-500" />
-                              ) : isSelected ? (
-                                <Circle className="w-5 h-5 text-red-500" />
+                                  ? 'border-primary-500 bg-primary-50'
+                                  : 'border-gray-200 hover:border-gray-300'
+                              }
+                            `}
+                          >
+                            <div className="flex items-center gap-3">
+                              {showResult ? (
+                                isCorrect ? (
+                                  <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                                ) : isSelected ? (
+                                  <Circle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                                ) : (
+                                  <Circle className="w-5 h-5 text-gray-300 flex-shrink-0" />
+                                )
                               ) : (
-                                <Circle className="w-5 h-5 text-gray-300" />
-                              )
-                            ) : (
-                              <Circle className={`w-5 h-5 ${isSelected ? 'text-primary-500' : 'text-gray-300'}`} />
-                            )}
-                            <span className={showResult && isCorrect ? 'text-green-700 font-medium' : ''}>
-                              {option}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                                <Circle className={`w-5 h-5 flex-shrink-0 ${isSelected ? 'text-primary-500' : 'text-gray-300'}`} />
+                              )}
+                              <span className={showResult && isCorrect ? 'text-green-700 font-medium' : ''}>
+                                {option}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                  {showResults[qIndex] && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="p-4 bg-blue-50 rounded-xl border border-blue-100"
+                    {showResults[qIndex] && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="p-4 bg-blue-50 rounded-xl border border-blue-100"
+                      >
+                        <p className="text-blue-800 text-sm">
+                          <span className="font-medium">Explanation:</span> {q.explanation}
+                        </p>
+                      </motion.div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Quiz Submit / Results Section */}
+              {!quizCompleted && allQuestionsAnswered && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-8 pt-6 border-t border-gray-100"
+                >
+                  <button
+                    onClick={handleSubmitQuiz}
+                    className="w-full py-4 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Trophy className="w-5 h-5" />
+                    Submit Quiz
+                  </button>
+                </motion.div>
+              )}
+
+              {quizCompleted && quizScore !== null && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className={`mt-8 p-6 rounded-xl border-2 ${
+                    quizScore >= 70
+                      ? 'bg-green-50 border-green-200'
+                      : quizScore >= 50
+                        ? 'bg-amber-50 border-amber-200'
+                        : 'bg-red-50 border-red-200'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className={`text-4xl font-bold mb-2 ${
+                      quizScore >= 70
+                        ? 'text-green-600'
+                        : quizScore >= 50
+                          ? 'text-amber-600'
+                          : 'text-red-600'
+                    }`}>
+                      {quizScore}%
+                    </div>
+                    <p className="text-gray-700 mb-2">
+                      {content.quiz.reduce((count, q, idx) => {
+                        const correctIdx = q.correctIndex ?? q.correctAnswer ?? 0;
+                        return selectedAnswers[idx] === correctIdx ? count + 1 : count;
+                      }, 0)} out of {content.quiz.length} correct
+                    </p>
+                    <p className={`font-medium mb-4 ${
+                      quizScore >= 70
+                        ? 'text-green-700'
+                        : quizScore >= 50
+                          ? 'text-amber-700'
+                          : 'text-red-700'
+                    }`}>
+                      {quizScore >= 70
+                        ? "Great job! You've mastered this topic!"
+                        : "Keep learning! Review the content and try again."}
+                    </p>
+                    <button
+                      onClick={handleRetakeQuiz}
+                      className="px-6 py-2 bg-white border border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors flex items-center gap-2 mx-auto"
                     >
-                      <p className="text-blue-800 text-sm">
-                        <span className="font-medium">Explanation:</span> {q.explanation}
-                      </p>
-                    </motion.div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </motion.section>
+                      <RefreshCw className="w-4 h-4" />
+                      Retake Quiz
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </motion.section>
+          )}
 
           {/* Navigation Footer */}
           <div className="flex items-center justify-between py-8 border-t border-gray-200">
@@ -757,7 +913,7 @@ export default function TermDeepDivePage() {
             </button>
 
             <Link
-              href={`/course/${content.fromLessonId.replace('lesson-', '')}`}
+              href={`/course/${fromLessonSlug}`}
               className="flex items-center gap-2 px-6 py-3 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition-colors"
             >
               Continue Lesson
@@ -770,33 +926,3 @@ export default function TermDeepDivePage() {
   );
 }
 
-// Helper to render content with [term] syntax as ClickableTerm
-function renderContentWithTerms(content: string): React.ReactNode {
-  const parts: React.ReactNode[] = [];
-  const regex = /\[([^\]]+)\]/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(content.slice(lastIndex, match.index));
-    }
-
-    const termText = match[1];
-    const termId = termText.toLowerCase().replace(/\s+/g, '-');
-
-    parts.push(
-      <ClickableTerm key={`${termId}-${match.index}`} termId={termId}>
-        {termText}
-      </ClickableTerm>
-    );
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < content.length) {
-    parts.push(content.slice(lastIndex));
-  }
-
-  return parts;
-}

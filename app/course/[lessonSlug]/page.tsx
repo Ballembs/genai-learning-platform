@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useUserStore, useNavigationStore } from '@/lib/store';
 import { LessonContent } from '@/components/lesson/LessonContent';
+import { LessonQuiz } from '@/components/lesson/LessonQuiz';
 import { Sidebar } from '@/components/lesson/Sidebar';
 import { BottomSheet, BottomSheetTrigger } from '@/components/ui/BottomSheet';
 import { useIsMobile } from '@/hooks/useMediaQuery';
@@ -218,6 +219,11 @@ export default function LessonPage() {
                     ))}
                   </div>
                 </div>
+              )}
+
+              {/* Quiz */}
+              {lesson.quiz && lesson.quiz.questions.length > 0 && (
+                <LessonQuiz quiz={lesson.quiz} lessonId={lesson.id} />
               )}
 
               {/* Navigation */}

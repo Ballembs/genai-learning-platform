@@ -119,19 +119,19 @@ plain strings, so we can have better formatting support."
 
 ## 🔑 Environment Variables
 
-Create `.env.local`:
+Create `.env.local` (see `.env.example` for reference):
 
 ```env
 # Anthropic (Claude API)
 ANTHROPIC_API_KEY=your_key_here
 
-# Voyage AI (Embeddings)
+# Voyage AI (Embeddings for RAG)
 VOYAGE_API_KEY=your_key_here
 
 # Supabase (Database & Auth)
 NEXT_PUBLIC_SUPABASE_URL=your_url_here
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_key_here
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_key_here
+SUPABASE_SECRET_KEY=your_key_here
 ```
 
 ---
