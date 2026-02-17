@@ -2,8 +2,9 @@
 // POST endpoint for generating comprehensive deep dive content
 
 import { NextRequest, NextResponse } from 'next/server';
-import { generateContent, isClaudeError } from '@/lib/ai/claude';
+import { generateContent, isClaudeError, checkDailyLimit } from '@/lib/ai/claude';
 import { buildDeepDivePrompt } from '@/lib/ai/prompts';
+import { checkRateLimit } from '@/lib/rate-limit';
 import type {
   GenerateDeepDiveRequest,
   GenerateDeepDiveResponse,
@@ -15,6 +16,17 @@ import type {
   QuizQuestion,
   UserLevel,
 } from '@/types';
+
+/**
+ * Extract client IP address from request headers
+ */
+function getClientIP(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return request.headers.get('x-real-ip') || 'unknown';
+}
 
 // In-memory cache for generated deep dives
 // In production, this would be stored in a database (Supabase)
@@ -256,6 +268,25 @@ function normalizeResponse(raw: RawDeepDiveResponse, termId: string, level: User
  */
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting - 10 requests per minute (deep dives are expensive)
+    const ip = getClientIP(request);
+    const { allowed, resetIn } = checkRateLimit(`deep-dive:${ip}`, 10, 60000);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(resetIn / 1000)) } }
+      );
+    }
+
+    // Daily API spending guard
+    const dailyCheck = checkDailyLimit();
+    if (!dailyCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Daily API limit reached. Service will reset at midnight UTC.' },
+        { status: 429 }
+      );
+    }
+
     // Parse request body
     let body: unknown;
     try {
