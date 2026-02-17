@@ -7,6 +7,53 @@ import { SYSTEM_PROMPT } from './prompts';
 // Lazy initialization of Anthropic client
 let anthropicClient: Anthropic | null = null;
 
+// ============================================
+// DAILY TOKEN USAGE GUARD (500K tokens/day)
+// ============================================
+const DAILY_TOKEN_LIMIT = 500_000;
+
+interface DailyUsage {
+  tokens: number;
+  date: string; // YYYY-MM-DD in UTC
+}
+
+let dailyUsage: DailyUsage = {
+  tokens: 0,
+  date: new Date().toISOString().split('T')[0],
+};
+
+function getTodayUTC(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+function resetIfNewDay(): void {
+  const today = getTodayUTC();
+  if (dailyUsage.date !== today) {
+    dailyUsage = { tokens: 0, date: today };
+  }
+}
+
+/**
+ * Check if daily token limit allows more requests
+ */
+export function checkDailyLimit(): { allowed: boolean; remaining: number; resetAt: string } {
+  resetIfNewDay();
+  const remaining = Math.max(0, DAILY_TOKEN_LIMIT - dailyUsage.tokens);
+  return {
+    allowed: dailyUsage.tokens < DAILY_TOKEN_LIMIT,
+    remaining,
+    resetAt: `${dailyUsage.date}T24:00:00Z`,
+  };
+}
+
+/**
+ * Track token usage for daily limit
+ */
+export function trackUsage(tokens: number): void {
+  resetIfNewDay();
+  dailyUsage.tokens += tokens;
+}
+
 function getClient(): Anthropic {
   if (!anthropicClient) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -94,6 +141,10 @@ export async function generateContent<T>(
       textContent.text
     );
   }
+
+  // Track token usage for daily limit
+  const totalTokens = response.usage.input_tokens + response.usage.output_tokens;
+  trackUsage(totalTokens);
 
   return {
     data: parsed,

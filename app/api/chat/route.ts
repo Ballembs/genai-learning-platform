@@ -5,12 +5,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildChatSystemPrompt, buildChatMessages } from '@/lib/ai/prompts';
 import { getRAGContext, getIndexStats } from '@/lib/ai/rag';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { checkDailyLimit, trackUsage } from '@/lib/ai/claude';
 import type {
   ChatRequest,
   ChatResponse,
   ChatMessage,
   UserLevel,
 } from '@/types';
+
+/**
+ * Extract client IP address from request headers
+ */
+function getClientIP(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return request.headers.get('x-real-ip') || 'unknown';
+}
 
 // Lazy initialization of Anthropic client
 let anthropicClient: Anthropic | null = null;
@@ -167,6 +180,25 @@ function extractSuggestedLessons(response: string): string[] {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting - 20 requests per minute
+    const ip = getClientIP(request);
+    const { allowed, resetIn } = checkRateLimit(`chat:${ip}`, 20, 60000);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(resetIn / 1000)) } }
+      );
+    }
+
+    // Daily API spending guard
+    const dailyCheck = checkDailyLimit();
+    if (!dailyCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Daily API limit reached. Service will reset at midnight UTC.' },
+        { status: 429 }
+      );
+    }
+
     // Parse request body
     let body: unknown;
     try {
@@ -265,6 +297,9 @@ INSTRUCTIONS FOR USING COURSE CONTENT:
     }
 
     const assistantMessage = textContent.text;
+
+    // Track token usage for daily limit
+    trackUsage(response.usage.input_tokens + response.usage.output_tokens);
 
     // Extract suggestions from the response
     const suggestedTerms = extractSuggestedTerms(assistantMessage);
