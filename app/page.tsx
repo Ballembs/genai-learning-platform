@@ -14,8 +14,10 @@ import {
   Code,
   Briefcase
 } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import { useUserStore } from '@/lib/store';
-import type { UserLevel } from '@/types';
+import type { UserLevel, UserGoal } from '@/types';
+import { USER_GOALS } from '@/types';
 
 const levels = [
   {
@@ -78,13 +80,16 @@ const features = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const { setLevel, currentLevel } = useUserStore();
+  const { setLevel, setGoal, currentLevel, currentGoal } = useUserStore();
   const [selectedLevel, setSelectedLevel] = useState<UserLevel>(currentLevel);
+  const [selectedGoal, setSelectedGoal] = useState<UserGoal | null>(currentGoal || null);
   const [isStarting, setIsStarting] = useState(false);
 
   const handleStart = () => {
+    if (!selectedGoal) return;
     setIsStarting(true);
     setLevel(selectedLevel);
+    setGoal(selectedGoal);
     setTimeout(() => {
       router.push('/course');
     }, 300);
@@ -186,14 +191,14 @@ export default function LandingPage() {
                   onClick={() => setSelectedLevel(level.id)}
                   className={`
                     w-full p-6 rounded-2xl border-2 text-left transition-all duration-200
-                    ${selectedLevel === level.id 
-                      ? `${level.borderColor} ${level.bgColor} shadow-lg scale-[1.02]` 
+                    ${selectedLevel === level.id
+                      ? `${level.borderColor} ${level.bgColor} shadow-lg scale-[1.02]`
                       : 'border-gray-200 hover:border-gray-300 bg-white'
                     }
                   `}
                 >
                   <div className={`
-                    w-12 h-12 rounded-xl bg-gradient-to-br ${level.color} 
+                    w-12 h-12 rounded-xl bg-gradient-to-br ${level.color}
                     flex items-center justify-center mb-4
                   `}>
                     <level.icon className="w-6 h-6 text-white" />
@@ -216,33 +221,85 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {/* Start Button */}
-          <div className="text-center">
-            <motion.button
-              onClick={handleStart}
-              disabled={isStarting}
-              className={`
-                px-8 py-4 rounded-xl font-semibold text-lg
-                bg-gradient-to-r from-primary-500 to-primary-600 text-white
-                hover:shadow-lg hover:scale-105 transition-all duration-200
-                disabled:opacity-50 disabled:cursor-not-allowed
-              `}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isStarting ? (
-                'Loading...'
-              ) : (
-                <>
-                  Start Learning as {levels.find(l => l.id === selectedLevel)?.title}
-                  <ChevronRight className="inline-block ml-2 w-5 h-5" />
-                </>
-              )}
-            </motion.button>
-            <p className="text-sm text-gray-500 mt-4">
-              No account required. Your progress is saved locally.
-            </p>
-          </div>
+          {/* Goal Selection - appears after level is selected */}
+          <AnimatePresence>
+            {selectedLevel && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: -20, height: 0 }}
+                transition={{ duration: 0.5 }}
+                className="mb-12"
+              >
+                <h2 className="text-3xl font-bold text-center text-gray-900 mb-2">
+                  What are you building?
+                </h2>
+                <p className="text-gray-600 text-center mb-8 max-w-2xl mx-auto">
+                  Every lesson will connect to your goal. Pick what excites you most.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
+                  {(Object.entries(USER_GOALS) as [UserGoal, typeof USER_GOALS[UserGoal]][]).map(([id, goal]) => (
+                    <motion.button
+                      key={id}
+                      onClick={() => setSelectedGoal(id)}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`
+                        p-5 rounded-xl border-2 text-left transition-all duration-200
+                        ${selectedGoal === id
+                          ? 'border-primary-500 bg-gradient-to-br from-primary-50 to-white shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                        }
+                      `}
+                    >
+                      <span className="text-3xl block mb-2">{goal.emoji}</span>
+                      <h3 className="font-semibold text-gray-900">{goal.label}</h3>
+                      <p className="text-sm text-gray-500 mt-1">{goal.tagline}</p>
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Start Button - only shows when both level AND goal are selected */}
+          <AnimatePresence>
+            {selectedLevel && selectedGoal && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="text-center"
+              >
+                <motion.button
+                  onClick={handleStart}
+                  disabled={isStarting}
+                  className={`
+                    px-8 py-4 rounded-xl font-semibold text-lg
+                    bg-gradient-to-r from-primary-500 to-primary-600 text-white
+                    hover:shadow-lg hover:scale-105 transition-all duration-200
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                  `}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {isStarting ? (
+                    'Loading...'
+                  ) : (
+                    <>
+                      Start Learning as {levels.find(l => l.id === selectedLevel)?.title}
+                      <ChevronRight className="inline-block ml-2 w-5 h-5" />
+                    </>
+                  )}
+                </motion.button>
+                <p className="text-sm text-gray-500 mt-4">
+                  No account required. Your progress is saved locally.
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </section>
 

@@ -11,7 +11,9 @@ import { SkeletonText } from '@/components/ui/Skeleton';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { lessonData } from '@/content/lessons';
 import { getCached, setCache } from '@/lib/cache';
-import type { UserLevel } from '@/types';
+import type { UserLevel, UserGoal } from '@/types';
+import { ShowTheWiring } from '@/components/ui/ShowTheWiring';
+import { getWiring } from '@/lib/wiring';
 
 const POPUP_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -31,9 +33,10 @@ interface PopupContentType {
 async function getPopupContent(
   termId: string,
   level: UserLevel,
-  lessonId?: string
+  lessonId?: string,
+  goal?: UserGoal
 ): Promise<PopupContentType> {
-  const cacheKey = `popup:${termId}:${level}`;
+  const cacheKey = `popup:${termId}:${level}:${goal || 'none'}`;
 
   // 1. Check in-memory cache (instant, same session)
   const memCached = memoryCache.get(cacheKey);
@@ -90,6 +93,7 @@ async function getPopupContent(
           lessonId: lessonId || 'unknown',
           lessonTitle,
         },
+        goal,
       }),
     });
 
@@ -129,7 +133,7 @@ export function Popup() {
     setContent,
     setLoading
   } = usePopupStore();
-  const { currentLevel, addExploration, updateExploration, hasExplored } = useUserStore();
+  const { currentLevel, currentGoal, addExploration, updateExploration, hasExplored } = useUserStore();
   const { currentLessonId } = useNavigationStore();
 
   // Prevent body scroll when popup is open on mobile
@@ -148,7 +152,7 @@ export function Popup() {
   useEffect(() => {
     if (isOpen && termId) {
       setLoading(true);
-      getPopupContent(termId, currentLevel as UserLevel, currentLessonId || undefined)
+      getPopupContent(termId, currentLevel as UserLevel, currentLessonId || undefined, currentGoal)
         .then(setContent)
         .catch(console.error);
 
@@ -159,7 +163,7 @@ export function Popup() {
           termId,
           termName: termName || termId,
           fromLessonId: currentLessonId || 'unknown',
-          fromContext: window.location.pathname,
+          fromContext: typeof window !== 'undefined' ? window.location.pathname : '',
           popupViewedAt: new Date(),
           quizAttempts: 0,
         });
@@ -167,7 +171,7 @@ export function Popup() {
         updateExploration(termId, { popupViewedAt: new Date() });
       }
     }
-  }, [isOpen, termId, currentLevel, currentLessonId]);
+  }, [isOpen, termId, currentLevel, currentLessonId, currentGoal]);
 
   // Close on escape key
   useEffect(() => {
@@ -191,28 +195,54 @@ export function Popup() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, closePopup]);
 
-  // Calculate position
+  // Reposition popup on window resize
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    if (!isOpen || isMobile) return;
+    const handleResize = () => forceUpdate(n => n + 1);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isOpen, isMobile]);
+
+  // Calculate position - ensures popup stays within viewport
   const getPopupStyle = useCallback(() => {
     if (!position) return {};
-    
+
     const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 768;
-    const popupWidth = 400;
-    const popupHeight = 350;
-    
+    const popupWidth = Math.min(420, viewportWidth - 32);
+    const margin = 16;
+
     let left = position.x - popupWidth / 2;
-    let top = position.y;
-    
-    // Keep within viewport horizontally
-    if (left < 16) left = 16;
-    if (left + popupWidth > viewportWidth - 16) left = viewportWidth - popupWidth - 16;
-    
-    // If too close to bottom, show above the term
-    if (top + popupHeight > viewportHeight - 16) {
-      top = position.y - popupHeight - 50;
+    if (left < margin) left = margin;
+    if (left + popupWidth > viewportWidth - margin) left = viewportWidth - popupWidth - margin;
+
+    const spaceBelow = viewportHeight - position.y - margin;
+    const spaceAbove = position.y - margin;
+    const estimatedHeight = 400;
+
+    let top: number;
+    let maxHeight: number;
+
+    if (spaceBelow >= estimatedHeight) {
+      top = position.y;
+      maxHeight = spaceBelow;
+    } else if (spaceAbove >= estimatedHeight) {
+      top = position.y - estimatedHeight - 60;
+      if (top < margin) top = margin;
+      maxHeight = position.y - top - 20;
+    } else if (spaceBelow >= spaceAbove) {
+      top = position.y;
+      maxHeight = spaceBelow;
+    } else {
+      top = margin;
+      maxHeight = spaceAbove;
     }
-    
-    return { left, top };
+
+    maxHeight = Math.max(maxHeight, 200);
+    maxHeight = Math.min(maxHeight, viewportHeight - margin * 2);
+
+    return { left, top, maxHeight: `${maxHeight}px` };
   }, [position]);
 
   const handleLearnMore = () => {
@@ -367,6 +397,13 @@ export function Popup() {
                       <MermaidDiagram chart={content.diagram} />
                     </motion.div>
                   )}
+
+                  {/* Show the Wiring */}
+                  <ShowTheWiring
+                    compact
+                    label={getWiring('popup').label}
+                    steps={getWiring('popup').steps}
+                  />
                 </motion.div>
               ) : (
                 <motion.p

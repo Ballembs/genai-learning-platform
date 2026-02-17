@@ -12,6 +12,38 @@ interface MermaidDiagramProps {
 // Track if mermaid has been initialized globally
 let mermaidInitialized = false;
 
+/**
+ * Sanitize Mermaid chart syntax to prevent parsing errors.
+ * Handles common issues from AI-generated diagrams.
+ */
+function sanitizeMermaidChart(chart: string): string {
+  let sanitized = chart.trim();
+
+  // Remove HTML tags like <br/>, <br>, etc.
+  sanitized = sanitized.replace(/<br\s*\/?>/gi, ' ');
+  sanitized = sanitized.replace(/<[^>]*>/g, '');
+
+  // Replace smart quotes with regular quotes
+  sanitized = sanitized.replace(/[""]/g, '"');
+  sanitized = sanitized.replace(/['']/g, "'");
+
+  // Escape colons in node labels (but not in graph direction like LR, TD)
+  // This is tricky - we need to handle quoted strings properly
+  // For now, wrap text containing colons in quotes if not already quoted
+  sanitized = sanitized.replace(/\[([^\]]*:[^\]]*)\]/g, (match, content) => {
+    // If content already has quotes, leave it
+    if (content.startsWith('"') && content.endsWith('"')) return match;
+    // Otherwise wrap in quotes and escape internal quotes
+    const escaped = content.replace(/"/g, '#quot;');
+    return `["${escaped}"]`;
+  });
+
+  // Clean up multiple spaces
+  sanitized = sanitized.replace(/  +/g, ' ');
+
+  return sanitized;
+}
+
 function MermaidDiagramInner({ chart, className = '' }: MermaidDiagramProps) {
   const uniqueId = useId();
   const [svg, setSvg] = useState<string>('');
@@ -19,8 +51,8 @@ function MermaidDiagramInner({ chart, className = '' }: MermaidDiagramProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [showRawCode, setShowRawCode] = useState(false);
 
-  // Clean the chart string - remove leading/trailing whitespace
-  const cleanChart = chart.trim();
+  // Clean and sanitize the chart string
+  const cleanChart = sanitizeMermaidChart(chart);
 
   // Create a stable, valid HTML ID from the React useId
   const diagramId = `mermaid-${uniqueId.replace(/:/g, '-')}`;
