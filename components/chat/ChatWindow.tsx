@@ -26,7 +26,7 @@ export function ChatWindow() {
     clearMessages,
   } = useChatStore();
 
-  const { currentLevel } = useUserStore();
+  const { currentLevel, currentGoal } = useUserStore();
   const { currentLessonId, currentTermId } = useNavigationStore();
 
   // Prevent body scroll when chat is open on mobile
@@ -64,21 +64,40 @@ export function ChatWindow() {
       context: currentLessonId || undefined,
     };
 
+    const userInput = input.trim();
     addMessage(userMessage);
     setInput('');
     setLoading(true);
 
     try {
-      // In production, this would call the API
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock response - in production, this comes from Claude with RAG
-      const response = getMockResponse(input, currentLevel, currentLessonId);
-      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userInput,
+          context: {
+            currentPage: typeof window !== 'undefined' ? window.location.pathname : '',
+            lessonId: currentLessonId || undefined,
+            termId: currentTermId || undefined,
+            userLevel: currentLevel,
+            recentExplorations: [],
+          },
+          history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          goal: currentGoal,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
       const assistantMessage: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now() + 1}`,
         role: 'assistant',
-        content: response,
+        content: data.message || data.response || data.content || 'Sorry, I could not generate a response.',
         timestamp: new Date(),
       };
 
@@ -86,9 +105,9 @@ export function ChatWindow() {
     } catch (error) {
       console.error('Chat error:', error);
       addMessage({
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now() + 1}`,
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: `I'm having trouble connecting right now. ${error instanceof Error ? error.message : 'Please try again in a moment.'}`,
         timestamp: new Date(),
       });
     } finally {
@@ -343,29 +362,3 @@ export function ChatWindow() {
   );
 }
 
-// Mock response generator - in production, this would be Claude API with RAG
-function getMockResponse(input: string, level: string, context?: string | null): string {
-  const lowerInput = input.toLowerCase();
-  
-  if (lowerInput.includes('simpler') || lowerInput.includes('explain')) {
-    return `Let me explain that more simply!\n\nThink of it like this: ${
-      level === 'beginner' 
-        ? "Imagine you're organizing books not by title, but by what they're about. Books about cooking would be near each other, books about history would be in another area. That's basically what we're doing with text!"
-        : "The concept uses vector representations to capture semantic meaning. Each piece of text becomes a point in high-dimensional space."
-    }\n\nDoes that help? Feel free to ask more questions!`;
-  }
-  
-  if (lowerInput.includes('example') || lowerInput.includes('real-world')) {
-    return `Here's a real-world example:\n\n🔍 **Customer Support Bot**\nA company stores all their FAQ answers as embeddings. When a customer asks "How do I reset my password?", the system finds the most similar FAQ even if it's titled "Password Recovery Steps".\n\nThe key insight: it matches by meaning, not exact words!\n\nWant me to explain how this connects to ${context || 'what you\'re learning'}?`;
-  }
-  
-  if (lowerInput.includes('next') || lowerInput.includes('learn next')) {
-    return `Based on what you've explored, I'd suggest:\n\n1. **Vector Databases** - How to store and search embeddings efficiently\n2. **Chunking Strategies** - How to split documents for better retrieval\n3. **Prompt Engineering** - How to get better results from AI\n\nWould you like me to explain any of these?`;
-  }
-  
-  return `Great question! Based on what you're learning about ${context || 'AI concepts'}:\n\n${
-    level === 'beginner'
-      ? "Let me break this down simply. The core idea is that AI can understand meaning, not just match words. This is powerful because it lets us build systems that truly understand what users are asking for."
-      : "This relates to the broader concept of semantic understanding in AI systems. The technical implementation involves encoding text into dense vector representations that capture meaning in a computationally useful form."
-  }\n\nIs there a specific part you'd like me to dive deeper into?`;
-}

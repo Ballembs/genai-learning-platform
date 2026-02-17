@@ -9,6 +9,52 @@
 
 export type UserLevel = 'beginner' | 'intermediate' | 'advanced';
 
+export type UserGoal = 'chatbot' | 'document-search' | 'content-generator' | 'team-leader' | 'curious';
+
+export const USER_GOALS: Record<UserGoal, {
+  label: string;
+  emoji: string;
+  tagline: string;
+  description: string;
+  exampleProject: string;
+}> = {
+  'chatbot': {
+    label: 'Build a Chatbot',
+    emoji: '💬',
+    tagline: 'Customer support, FAQ bot, internal assistant',
+    description: 'Learn how AI chatbots understand questions and generate helpful answers.',
+    exampleProject: 'a customer support chatbot that answers questions using your company docs',
+  },
+  'document-search': {
+    label: 'Smart Document Search',
+    emoji: '🔍',
+    tagline: 'Search PDFs, wikis, knowledge bases',
+    description: 'Build systems that find the right information across thousands of documents.',
+    exampleProject: 'a search system that finds answers across your company knowledge base',
+  },
+  'content-generator': {
+    label: 'Content Generator',
+    emoji: '✍️',
+    tagline: 'Blog posts, reports, summaries',
+    description: 'Create AI tools that draft, summarize, and transform content.',
+    exampleProject: 'a tool that generates blog posts and reports from your notes and data',
+  },
+  'team-leader': {
+    label: 'Lead AI Initiatives',
+    emoji: '🎯',
+    tagline: 'Evaluate, plan, and lead AI projects',
+    description: 'Understand AI capabilities to make better decisions for your team.',
+    exampleProject: 'evaluating and leading AI adoption at your organization',
+  },
+  'curious': {
+    label: 'Just Curious',
+    emoji: '🧠',
+    tagline: 'Understand how it all works',
+    description: 'Explore how AI thinks, learns, and creates — no project required.',
+    exampleProject: 'understanding how tools like ChatGPT and Claude actually work under the hood',
+  },
+};
+
 export interface User {
   id: string;
   email?: string;

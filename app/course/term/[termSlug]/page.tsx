@@ -26,7 +26,7 @@ import { MermaidDiagram } from '@/components/diagrams/MermaidDiagram';
 import { MarkdownContent, CodeBlock } from '@/components/content/MarkdownContent';
 import { lessonData } from '@/content/lessons';
 import { getCached, setCache } from '@/lib/cache';
-import type { UserLevel } from '@/types';
+import type { UserLevel, UserGoal } from '@/types';
 
 const DEEP_DIVE_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -259,7 +259,7 @@ export default function TermDeepDivePage() {
   const router = useRouter();
   const termSlug = params.termSlug as string;
 
-  const { currentLevel, setLevel, updateExploration, hasExplored, profile, saveQuizScore } = useUserStore();
+  const { currentLevel, currentGoal, setLevel, updateExploration, hasExplored, profile, saveQuizScore } = useUserStore();
   const { setBreadcrumbs, currentLessonId } = useNavigationStore();
 
   // Content state
@@ -291,8 +291,8 @@ export default function TermDeepDivePage() {
    * Caching priority: useRef (instant) → localStorage (fast) → API (slow)
    */
   const fetchDeepDive = useCallback(
-    async (level: UserLevel) => {
-      const cacheKey = `deepdive:${termSlug}:${level}`;
+    async (level: UserLevel, goal: UserGoal) => {
+      const cacheKey = `deepdive:${termSlug}:${level}:${goal}`;
 
       // 1. Check in-memory cache first (instant, same session)
       if (contentCache.current[level]) {
@@ -330,6 +330,7 @@ export default function TermDeepDivePage() {
               exploredTerms: exploredTermIds,
               userLevel: level,
             },
+            goal,
           }),
         });
 
@@ -366,11 +367,11 @@ export default function TermDeepDivePage() {
     [termSlug, termName, fromLessonId]
   );
 
-  // Fetch on mount and when level changes
+  // Fetch on mount and when level/goal changes
   useEffect(() => {
-    fetchDeepDive(currentLevel);
+    fetchDeepDive(currentLevel, currentGoal);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLevel, termSlug]);
+  }, [currentLevel, currentGoal, termSlug]);
 
   // Update breadcrumbs
   useEffect(() => {
@@ -408,7 +409,7 @@ export default function TermDeepDivePage() {
       <DeepDiveError
         termName={termName}
         error={error}
-        onRetry={() => fetchDeepDive(currentLevel)}
+        onRetry={() => fetchDeepDive(currentLevel, currentGoal)}
         onBack={() => router.back()}
       />
     );

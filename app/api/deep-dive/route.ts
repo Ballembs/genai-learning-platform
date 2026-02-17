@@ -15,6 +15,7 @@ import type {
   AdvancedTopic,
   QuizQuestion,
   UserLevel,
+  UserGoal,
 } from '@/types';
 
 /**
@@ -309,6 +310,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { termId, term, level, context } = body;
+    const goal = (body as { goal?: string }).goal as UserGoal | undefined;
 
     // Check cache first
     const cacheKey = getCacheKey(termId, level);
@@ -329,6 +331,7 @@ export async function POST(request: NextRequest) {
       level,
       originLesson: context.fromLessonId,
       exploredTerms: context.exploredTerms,
+      goal,
     });
 
     // Deep dives need more tokens and slightly lower temperature for consistency

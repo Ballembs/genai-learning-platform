@@ -1,13 +1,15 @@
 // lib/ai/prompts.ts
 // Prompt templates for AI content generation
 
-import type { UserLevel } from '@/types';
+import type { UserLevel, UserGoal } from '@/types';
+import { USER_GOALS } from '@/types';
 
 interface PopupPromptParams {
   term: string;
   level: UserLevel;
   lessonTitle: string;
   surroundingText?: string;
+  goal?: UserGoal;
 }
 
 interface DeepDivePromptParams {
@@ -15,6 +17,7 @@ interface DeepDivePromptParams {
   level: UserLevel;
   originLesson: string;
   exploredTerms: string[];
+  goal?: UserGoal;
 }
 
 /**
@@ -22,7 +25,7 @@ interface DeepDivePromptParams {
  * Based on the template from CLAUDE.md
  */
 export function buildPopupPrompt(params: PopupPromptParams): string {
-  const { term, level, lessonTitle, surroundingText } = params;
+  const { term, level, lessonTitle, surroundingText, goal } = params;
 
   const levelGuidance = {
     beginner: 'Use simple analogies and everyday language. Avoid jargon. Compare to familiar concepts.',
@@ -30,10 +33,15 @@ export function buildPopupPrompt(params: PopupPromptParams): string {
     advanced: 'Use precise technical language. Reference implementation details and trade-offs.',
   };
 
+  const goalContext = goal && goal !== 'curious'
+    ? `\nThe user's build goal is: "${USER_GOALS[goal]?.exampleProject || goal}".
+Where naturally relevant, connect this explanation to how "${term}" relates to building ${USER_GOALS[goal]?.exampleProject || 'their project'}. Don't force it — only mention the project connection if it genuinely helps understanding.`
+    : '';
+
   return `Generate a popup explanation for "${term}" at ${level} level.
 
 User is currently reading: ${lessonTitle}
-${surroundingText ? `Surrounding context: ${surroundingText}` : ''}
+${surroundingText ? `Surrounding context: ${surroundingText}` : ''}${goalContext}
 
 Requirements:
 - 2-3 sentences max for the explanation
@@ -56,7 +64,12 @@ Return ONLY valid JSON with this exact structure (no markdown, no code blocks):
  * Returns content matching the DeepDiveContent type exactly
  */
 export function buildDeepDivePrompt(params: DeepDivePromptParams): string {
-  const { term, level, originLesson, exploredTerms } = params;
+  const { term, level, originLesson, exploredTerms, goal } = params;
+
+  const goalContext = goal && goal !== 'curious'
+    ? `\nUser's build goal: ${USER_GOALS[goal]?.exampleProject || goal}
+In the analogy and explanation sections, connect concepts to building ${USER_GOALS[goal]?.exampleProject || 'their project'} where it naturally fits. For the code example, orient it toward their goal if possible.`
+    : '';
 
   const levelGuidance = {
     beginner: `
@@ -88,7 +101,7 @@ This content MUST match the quality of hand-crafted educational content. Users a
 USER CONTEXT:
 - Learning level: ${level}
 - Came from lesson: ${originLesson}
-- Already explored terms: ${exploredTerms.length > 0 ? exploredTerms.join(', ') : 'none yet'}
+- Already explored terms: ${exploredTerms.length > 0 ? exploredTerms.join(', ') : 'none yet'}${goalContext}
 
 LEVEL-SPECIFIC REQUIREMENTS:
 ${levelGuidance[level]}
@@ -206,8 +219,15 @@ export function buildChatSystemPrompt(params: {
   lessonId?: string;
   termId?: string;
   recentExplorations: string[];
+  goal?: UserGoal;
 }): string {
-  const { level, currentPage, lessonId, termId, recentExplorations } = params;
+  const { level, currentPage, lessonId, termId, recentExplorations, goal } = params;
+
+  const goalContext = goal && goal !== 'curious'
+    ? `\nUSER'S BUILD GOAL: The user is learning AI because they want to build ${USER_GOALS[goal]?.exampleProject || goal}.
+When explaining concepts, connect them to this goal where relevant. For example, if they're building a chatbot and ask about embeddings, explain how embeddings power the search that finds relevant answers for their chatbot.
+Don't force every answer to mention their project — only when it genuinely helps.`
+    : '';
 
   const levelPersonality = {
     beginner: `
@@ -242,7 +262,7 @@ export function buildChatSystemPrompt(params: {
 
 USER CONTEXT:
 - Learning level: ${level}
-${contextInfo.map(info => `- ${info}`).join('\n')}
+${contextInfo.map(info => `- ${info}`).join('\n')}${goalContext}
 
 YOUR PERSONALITY FOR ${level.toUpperCase()} LEVEL:
 ${levelPersonality[level]}

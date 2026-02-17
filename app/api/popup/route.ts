@@ -9,7 +9,8 @@ import type {
   GeneratePopupRequest,
   GeneratePopupResponse,
   PopupContent,
-  UserLevel
+  UserLevel,
+  UserGoal,
 } from '@/types';
 
 /**
@@ -111,6 +112,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { termId, term, level, context } = body;
+    const goal = (body as { goal?: string }).goal as UserGoal | undefined;
 
     // Check cache first
     const cacheKey = getCacheKey(termId, level);
@@ -130,6 +132,7 @@ export async function POST(request: NextRequest) {
       level,
       lessonTitle: context.lessonTitle,
       surroundingText: context.surroundingText,
+      goal,
     });
 
     const result = await generateContent<PopupContent>(prompt, {

@@ -12,6 +12,7 @@ import type {
   ChatResponse,
   ChatMessage,
   UserLevel,
+  UserGoal,
 } from '@/types';
 
 /**
@@ -221,6 +222,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { message, context, history } = body;
+    const goal = (body as { goal?: string }).goal as UserGoal | undefined;
 
     // RAG retrieval (best-effort)
     let ragContext = '';
@@ -248,6 +250,7 @@ export async function POST(request: NextRequest) {
       lessonId: context.lessonId,
       termId: context.termId,
       recentExplorations: context.recentExplorations,
+      goal,
     });
 
     // Append RAG context if available

@@ -11,7 +11,7 @@ import { SkeletonText } from '@/components/ui/Skeleton';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { lessonData } from '@/content/lessons';
 import { getCached, setCache } from '@/lib/cache';
-import type { UserLevel } from '@/types';
+import type { UserLevel, UserGoal } from '@/types';
 
 const POPUP_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -31,9 +31,10 @@ interface PopupContentType {
 async function getPopupContent(
   termId: string,
   level: UserLevel,
-  lessonId?: string
+  lessonId?: string,
+  goal?: UserGoal
 ): Promise<PopupContentType> {
-  const cacheKey = `popup:${termId}:${level}`;
+  const cacheKey = `popup:${termId}:${level}:${goal || 'none'}`;
 
   // 1. Check in-memory cache (instant, same session)
   const memCached = memoryCache.get(cacheKey);
@@ -90,6 +91,7 @@ async function getPopupContent(
           lessonId: lessonId || 'unknown',
           lessonTitle,
         },
+        goal,
       }),
     });
 
@@ -129,7 +131,7 @@ export function Popup() {
     setContent,
     setLoading
   } = usePopupStore();
-  const { currentLevel, addExploration, updateExploration, hasExplored } = useUserStore();
+  const { currentLevel, currentGoal, addExploration, updateExploration, hasExplored } = useUserStore();
   const { currentLessonId } = useNavigationStore();
 
   // Prevent body scroll when popup is open on mobile
@@ -148,7 +150,7 @@ export function Popup() {
   useEffect(() => {
     if (isOpen && termId) {
       setLoading(true);
-      getPopupContent(termId, currentLevel as UserLevel, currentLessonId || undefined)
+      getPopupContent(termId, currentLevel as UserLevel, currentLessonId || undefined, currentGoal)
         .then(setContent)
         .catch(console.error);
 
@@ -159,7 +161,7 @@ export function Popup() {
           termId,
           termName: termName || termId,
           fromLessonId: currentLessonId || 'unknown',
-          fromContext: window.location.pathname,
+          fromContext: typeof window !== 'undefined' ? window.location.pathname : '',
           popupViewedAt: new Date(),
           quizAttempts: 0,
         });
@@ -167,7 +169,7 @@ export function Popup() {
         updateExploration(termId, { popupViewedAt: new Date() });
       }
     }
-  }, [isOpen, termId, currentLevel, currentLessonId]);
+  }, [isOpen, termId, currentLevel, currentLessonId, currentGoal]);
 
   // Close on escape key
   useEffect(() => {
