@@ -47,10 +47,12 @@ interface UserStore {
   currentLevel: UserLevel;
   currentGoal: UserGoal;
   isAuthenticated: boolean;
+  showWiring: boolean;
 
   // Actions
   setLevel: (level: UserLevel) => void;
   setGoal: (goal: UserGoal) => void;
+  toggleWiring: () => void;
   setProfile: (profile: UserProfile) => void;
   addExploration: (exploration: Exploration) => void;
   updateExploration: (termId: string, updates: Partial<Exploration>) => void;
@@ -68,9 +70,11 @@ export const useUserStore = create<UserStore>()(
       currentLevel: 'beginner',
       currentGoal: 'curious',
       isAuthenticated: false,
+      showWiring: false,
 
       setLevel: (level) => set({ currentLevel: level }),
       setGoal: (goal) => set({ currentGoal: goal }),
+      toggleWiring: () => set((state) => ({ showWiring: !state.showWiring })),
       
       setProfile: (profile) => set({ profile, isAuthenticated: true }),
       
@@ -259,6 +263,7 @@ export const useUserStore = create<UserStore>()(
         profile: state.profile,
         currentLevel: state.currentLevel,
         currentGoal: state.currentGoal,
+        showWiring: state.showWiring,
       }),
       skipHydration: true,
     }

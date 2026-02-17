@@ -20,6 +20,7 @@ import {
   Trophy,
   RefreshCw,
   Loader2,
+  Zap,
 } from 'lucide-react';
 import { useUserStore, useNavigationStore } from '@/lib/store';
 import { MermaidDiagram } from '@/components/diagrams/MermaidDiagram';
@@ -27,6 +28,8 @@ import { MarkdownContent, CodeBlock } from '@/components/content/MarkdownContent
 import { lessonData } from '@/content/lessons';
 import { getCached, setCache } from '@/lib/cache';
 import type { UserLevel, UserGoal } from '@/types';
+import { ShowTheWiring } from '@/components/ui/ShowTheWiring';
+import { getWiring } from '@/lib/wiring';
 
 const DEEP_DIVE_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -259,7 +262,7 @@ export default function TermDeepDivePage() {
   const router = useRouter();
   const termSlug = params.termSlug as string;
 
-  const { currentLevel, currentGoal, setLevel, updateExploration, hasExplored, profile, saveQuizScore } = useUserStore();
+  const { currentLevel, currentGoal, setLevel, updateExploration, hasExplored, profile, saveQuizScore, showWiring, toggleWiring } = useUserStore();
   const { setBreadcrumbs, currentLessonId } = useNavigationStore();
 
   // Content state
@@ -512,6 +515,23 @@ export default function TermDeepDivePage() {
                   {levelConfig[level].label}
                 </button>
               ))}
+
+              {/* Show the Wiring Toggle */}
+              <button
+                onClick={toggleWiring}
+                className={`
+                  flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium
+                  transition-all ml-2
+                  ${showWiring
+                    ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }
+                `}
+                title={showWiring ? 'Hide AI wiring' : 'Show AI wiring'}
+              >
+                <Zap className={`w-3.5 h-3.5 ${showWiring ? 'text-amber-500' : 'text-gray-400'}`} />
+                <span>Wiring</span>
+              </button>
             </div>
           </div>
         </div>
@@ -561,6 +581,14 @@ export default function TermDeepDivePage() {
             <h1 className="text-4xl font-bold text-gray-900 mb-4">{termName}</h1>
 
             <p className="text-xl text-gray-600">{content.oneLiner}</p>
+
+            {/* Show the Wiring */}
+            <div className="mt-6 pt-6 border-t border-gray-100">
+              <ShowTheWiring
+                label={getWiring('deepDive').label}
+                steps={getWiring('deepDive').steps}
+              />
+            </div>
           </div>
 
           {/* Analogy Section */}

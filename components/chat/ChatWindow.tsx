@@ -7,6 +7,8 @@ import { Send, Minimize2, Maximize2, Trash2, Bot, User, Loader2, X, ChevronDown 
 import { useChatStore, useUserStore, useNavigationStore } from '@/lib/store';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import type { ChatMessage } from '@/types';
+import { ShowTheWiring } from '@/components/ui/ShowTheWiring';
+import { WIRING } from '@/lib/wiring';
 
 export function ChatWindow() {
   const [input, setInput] = useState('');
@@ -199,6 +201,15 @@ export function ChatWindow() {
                 {currentTermId && ` > ${currentTermId}`}
               </div>
             )}
+
+            {/* Show the Wiring */}
+            <div className="px-4 pt-2">
+              <ShowTheWiring
+                compact
+                label={WIRING.chat.label}
+                steps={WIRING.chat.steps}
+              />
+            </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
