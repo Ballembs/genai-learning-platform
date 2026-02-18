@@ -109,7 +109,7 @@ export default function LessonPage() {
   }
 
   // Get previous and next lessons
-  const lessonOrder = ['01-how-ai-works', '02-prompt-engineering', '03-embeddings', '04-rag', '05-agents'];
+  const lessonOrder = ['01-how-ai-works', '02-prompt-engineering', '03-embeddings', '04-rag', '05-agents', '06-agentic-patterns', '07-agentic-practice', '08-mcp'];
   const currentIndex = lessonOrder.indexOf(lessonSlug);
   const prevLesson = currentIndex > 0 ? lessonOrder[currentIndex - 1] : null;
   const nextLesson = currentIndex < lessonOrder.length - 1 ? lessonOrder[currentIndex + 1] : null;

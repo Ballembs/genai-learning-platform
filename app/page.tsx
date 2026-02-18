@@ -202,6 +202,27 @@ const lessons = [
     time: 45,
     terms: 8,
   },
+  {
+    num: 6,
+    title: 'Agentic AI Patterns',
+    outcome: 'Design production agent systems — orchestration, multi-agent, planning, guardrails',
+    time: 45,
+    terms: 10,
+  },
+  {
+    num: 7,
+    title: 'Agentic AI in Practice',
+    outcome: 'Real-world applications — data pipelines, governance, NL-to-SQL, code generation, CI/CD agents',
+    time: 50,
+    terms: 10,
+  },
+  {
+    num: 8,
+    title: 'MCP: Model Context Protocol',
+    outcome: 'Master the universal standard — how AI connects to tools, data, and services in production',
+    time: 45,
+    terms: 10,
+  },
 ];
 
 // ============================================
@@ -307,7 +328,7 @@ export default function LandingPage() {
               Understand AI — From ChatGPT to Building Your Own
             </h1>
             <p className="text-lg sm:text-xl text-gray-600 mb-8 max-w-3xl mx-auto leading-relaxed">
-              5 lessons that take you from &ldquo;How does AI even work?&rdquo; to understanding tokens, embeddings, RAG, and agents. Every concept is clickable. Every question has an answer.
+              8 lessons that take you from &ldquo;How does AI even work?&rdquo; to building production AI systems for real enterprise workflows. Every concept is clickable. Every question has an answer.
             </p>
 
             {/* CTAs */}
@@ -331,7 +352,7 @@ export default function LandingPage() {
 
             {/* Trust line */}
             <p className="text-sm text-gray-400">
-              No account needed · 5 lessons · Works on mobile · Free
+              No account needed · 8 lessons · Works on mobile · Free
             </p>
           </motion.div>
         </div>

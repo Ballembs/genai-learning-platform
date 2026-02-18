@@ -11,6 +11,9 @@ import { lesson02 } from './lesson-02';
 import { lesson03 } from './lesson-03';
 import { lesson04 } from './lesson-04';
 import { lesson05 } from './lesson-05';
+import { lesson06 } from './lesson-06';
+import { lesson07 } from './lesson-07';
+import { lesson08 } from './lesson-08';
 
 interface LessonData {
   id: string;
@@ -34,4 +37,7 @@ export const lessonData: Record<string, LessonData> = {
   '03-embeddings': lesson03,
   '04-rag': lesson04,
   '05-agents': lesson05,
+  '06-agentic-patterns': lesson06,
+  '07-agentic-practice': lesson07,
+  '08-mcp': lesson08,
 };
