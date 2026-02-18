@@ -319,11 +319,17 @@ If your conversation gets too long, AI "forgets" the beginning. It's not storing
 
   intermediate: `## How Language Models Actually Work
 
-Understanding the internals of LLMs helps you use them more effectively. This lesson covers the architecture, training, and inference processes that power modern AI.
+Understanding the internals of LLMs helps you use them more effectively and debug unexpected behavior. As a developer working with AI, you'll make better decisions about when to use different models, how to optimize costs, and why certain prompts work better than others. This lesson covers the architecture, training, and [inference] processes that power modern AI systems like GPT-4 and Claude.
+
+Think of this as learning how the engine works before you start driving. You don't need to build a transformer from scratch, but knowing what's happening under the hood will make you a significantly more effective AI developer.
 
 ## The Transformer Architecture
 
-All modern LLMs are built on the [transformer] architecture (Vaswani et al., 2017). Key components:
+All modern LLMs are built on the [transformer] architecture, introduced in the landmark 2017 paper "Attention Is All You Need" by Vaswani et al. Before transformers, language models used recurrent neural networks (RNNs) that processed text one word at a time, sequentially. This was slow and made it hard to capture long-range dependencies—by the time the model reached the end of a paragraph, it had often "forgotten" important context from the beginning.
+
+Transformers revolutionized this by processing all words in parallel using a mechanism called [self-attention]. Instead of reading left-to-right like an RNN, a transformer looks at every word simultaneously and learns which words are most relevant to each other. This is why modern AI can understand that in the sentence "The trophy didn't fit in the suitcase because it was too big," the word "it" refers to "trophy"—the transformer computes attention weights that connect these words across the sentence.
+
+The architecture consists of stacked "transformer blocks," each containing multi-head attention and feed-forward networks. Modern LLMs like GPT-4 stack 80-100+ of these blocks, with the output of each block feeding into the next, progressively building more abstract representations of the input.
 
 \`\`\`mermaid
 flowchart TB
@@ -340,9 +346,17 @@ flowchart TB
     end
 \`\`\`
 
+The diagram above shows the high-level flow: input text is converted to [tokens], embedded as vectors, enhanced with position information (so the model knows word order), then processed through N transformer blocks. The final output layer converts the processed representations into probability distributions over the vocabulary for next-token prediction.
+
 ### Tokenization
 
-Before processing, text is converted to [tokens] using algorithms like BPE (Byte-Pair Encoding):
+Before any neural network processing can happen, text must be converted to numbers. This is where [tokenization] comes in—it's the critical bridge between human-readable text and the numerical representations that neural networks operate on.
+
+Modern LLMs use subword tokenization algorithms, most commonly Byte-Pair Encoding (BPE). The key insight behind BPE is that you don't want to tokenize at the character level (too slow, too little meaning per token) or at the word level (vocabulary would be enormous, can't handle new words). Instead, BPE finds a middle ground: common words like "the" or "and" become single tokens, while rare words get split into meaningful subpieces.
+
+The algorithm works by starting with individual characters, then iteratively merging the most frequent pairs. After training on a large corpus, you end up with a vocabulary of ~50,000-100,000 tokens that can represent any text. This is why you'll see "ChatGPT" split into ["Chat", "G", "PT"]—"Chat" is common enough to be its own token, but "GPT" as a unit wasn't frequent enough during tokenizer training.
+
+Why does this matter practically? Because **token count directly affects cost and context limits**. When you're paying $0.03 per 1K input tokens, understanding that a 1,000-word document might be 1,300 tokens (not 1,000) changes your cost calculations. And when your [context window] is 8K tokens, knowing that your system prompt uses 500 tokens helps you budget the remaining space.
 
 \`\`\`python
 import tiktoken
@@ -359,11 +373,17 @@ decoded = encoder.decode(tokens)
 print(decoded)  # "Hello, how are you?"
 \`\`\`
 
-Token count directly impacts cost and [context window] usage.
+Notice that our 5-word sentence becomes 6 tokens. The comma gets its own token (11), and words are tokenized based on the model's learned vocabulary. Different models have different tokenizers—GPT-4's tokenizer produces different token IDs than Claude's. This is why you should always use the specific tokenizer for the model you're calling when estimating costs or checking context limits.
+
+**Practical tip**: Use \`tiktoken\` to count tokens before sending requests. This prevents context overflow errors and helps you estimate costs accurately.
 
 ## The Training Process
 
-LLMs learn through [next token prediction] on massive datasets:
+Now let's look at how these models actually learn. The core training objective is deceptively simple: [next token prediction]. Given a sequence of tokens, predict the probability distribution over what comes next. The model sees "The cat sat on the" and learns to assign high probability to tokens like "mat," "floor," "couch" and low probability to tokens like "purple," "running," "xyz."
+
+What makes this simple objective so powerful? Scale. When you train on trillions of tokens of text—books, articles, code, conversations—the model implicitly learns grammar, facts, reasoning patterns, and even theory of mind. It learns that verbs should agree with subjects, that Paris is in France, that code should be syntactically valid, and that humans in stories have beliefs and intentions. All from predicting the next word, billions of times.
+
+The training loop itself is straightforward gradient descent: compute how wrong the predictions were (cross-entropy loss), calculate which direction to adjust the [parameters], take a small step in that direction, repeat. But the engineering challenges at scale are immense—training GPT-4 reportedly required tens of thousands of GPUs running for months.
 
 \`\`\`python
 # Simplified training loop
@@ -378,7 +398,11 @@ for batch in training_data:
     optimizer.step()
 \`\`\`
 
+This code shows the essence of training: the model sees input tokens, produces logits (raw prediction scores), compares them to the actual next tokens, and adjusts weights to reduce the error. What's not shown is the distributed training across thousands of GPUs, the careful learning rate schedules, the gradient clipping to prevent instability, and countless other engineering details that make training at scale possible.
+
 ### Training Data Scale
+
+The relationship between training compute, data, and model size follows predictable patterns called "scaling laws." Researchers at DeepMind found that for a given compute budget, there's an optimal balance between model size and training data.
 
 | Model | Training Tokens | Parameters |
 |-------|-----------------|------------|
@@ -386,11 +410,17 @@ for batch in training_data:
 | LLaMA 2 | 2T | 70B |
 | GPT-4 | ~13T (estimated) | ~1.8T |
 
-More data and [parameters] generally improve capabilities, following scaling laws.
+More data and [parameters] generally improve capabilities, following these scaling laws. Notice how LLaMA 2 trained on 7x more tokens than GPT-3 despite having fewer parameters—this reflects the "Chinchilla" insight that earlier models were undertrained. Modern practice is to train smaller models on more data rather than making models bigger without sufficient training.
+
+**What this means for you**: Larger, more recent models are genuinely more capable, but they're also more expensive. For many tasks, a well-prompted smaller model works just as well. Understanding this tradeoff helps you choose the right model for each use case.
 
 ## Inference: Generating Text
 
-At inference time, the model generates one token at a time:
+Training is learning; [inference] is using what was learned. When you call the API and get a response, that's inference. Understanding the inference process explains why generation takes time, why longer responses cost more, and why certain parameters affect output quality.
+
+The key insight is that generation is **autoregressive**: the model produces one token at a time, and each new token depends on all previous tokens. To generate a 100-token response, the model runs 100 forward passes, each one slightly larger than the last because it includes the previously generated tokens.
+
+This explains why you see text streaming in character by character when using Claude or ChatGPT—you're literally watching the model think one token at a time. It also explains why longer outputs cost more: you're paying for 100 forward passes, not one.
 
 \`\`\`python
 def generate(prompt: str, max_tokens: int = 100, temperature: float = 0.7):
@@ -415,9 +445,15 @@ def generate(prompt: str, max_tokens: int = 100, temperature: float = 0.7):
     return detokenize(tokens)
 \`\`\`
 
+Each iteration of this loop: (1) runs the full model to get logits for the next token, (2) applies temperature scaling to control randomness, (3) converts logits to probabilities via softmax, (4) samples a token from the distribution, (5) appends it to the sequence. When the model produces an end-of-sequence token (or hits max_tokens), generation stops.
+
 ### Temperature and Sampling
 
-[Temperature] modifies the probability distribution:
+[Temperature] is one of the most important parameters you'll use when working with LLMs. It controls the randomness of generation by scaling the logits before the softmax function.
+
+Mathematically, lower temperature makes the probability distribution "sharper"—the most likely token becomes even more likely, and unlikely tokens become even less likely. Higher temperature "flattens" the distribution, giving more chance to less likely tokens.
+
+Practically: use low temperature (0.1-0.3) when you want consistent, factual responses—code generation, factual QA, structured output. Use higher temperature (0.7-1.0) when you want creativity and variety—brainstorming, creative writing, generating diverse examples.
 
 \`\`\`python
 # Original logits for next token
@@ -436,9 +472,15 @@ probs_t2 = softmax([1.0, 0.75, 0.5, 0.25])
 # [0.32, 0.28, 0.24, 0.16]
 \`\`\`
 
+Look at how the probabilities change: at T=0.5, "the" has 64% probability, making it very likely to be chosen. At T=2.0, the probabilities are much closer together, so any of the four tokens could reasonably be selected. The same logits produce very different behavior depending on temperature.
+
+**Practical guidance**: Start with temperature 0.7 for general use, then adjust based on your needs. If outputs are too repetitive or boring, increase temperature. If they're too random or make factual errors, decrease it.
+
 ### Top-p (Nucleus) Sampling
 
-Limits sampling to tokens covering probability mass p:
+Temperature alone doesn't prevent the model from occasionally selecting very unlikely tokens. [Top-p sampling] (also called nucleus sampling) adds another control: instead of sampling from the full vocabulary, sample only from tokens that together make up the top p% of probability mass.
+
+With top_p=0.9, the model considers only tokens until their cumulative probability reaches 90%, then samples from that reduced set. This prevents selecting extremely unlikely tokens while still allowing diversity within the reasonable options.
 
 \`\`\`python
 def top_p_sample(probs, p=0.9):
@@ -456,9 +498,15 @@ def top_p_sample(probs, p=0.9):
     return sample_from(candidates)
 \`\`\`
 
+The function sorts tokens by probability, accumulates until reaching the threshold p, then samples only from those top candidates. Combined with temperature, this gives you fine-grained control: temperature affects the shape of the distribution, top-p affects which tokens are even considered.
+
+**When to adjust top-p**: The default (0.9-1.0) works for most cases. Lower it to 0.7-0.8 if you're seeing occasional nonsensical outputs. Setting both low temperature AND low top-p gives very deterministic outputs.
+
 ## Context Window Management
 
-The [context window] is finite. With 8K tokens:
+The [context window] is your token budget for each API call. Everything—system prompt, conversation history, retrieved documents, the user's message, AND the model's response—must fit within this limit. Understanding context management is essential for building reliable AI applications.
+
+Different models have very different context limits: GPT-3.5-turbo offers 16K tokens, GPT-4 goes up to 128K, and Claude can handle 200K. But bigger isn't always better—using the full context is expensive and slower. You need to budget wisely.
 
 \`\`\`python
 # Token budget breakdown
@@ -471,9 +519,15 @@ user_message = 200         # Current input
 # Remaining for response: 2492 tokens
 \`\`\`
 
+This breakdown illustrates a common challenge: with a fixed context window, every component competes for space. If your system prompt grows, you have less room for conversation history. If you retrieve more documents for RAG, you have less room for the response.
+
+**Practical strategies**: (1) Keep system prompts concise—every token counts. (2) Implement sliding window for conversation history—keep recent messages, summarize or drop old ones. (3) For RAG, retrieve only the most relevant chunks. (4) Set max_tokens for responses to prevent the model from rambling and exceeding your budget.
+
 ### KV-Cache Optimization
 
-During generation, key-value pairs are cached to avoid recomputation:
+Here's an implementation detail that affects latency and cost: during autoregressive generation, the model doesn't recompute attention from scratch for each token. Instead, it caches the Key and Value matrices from previous tokens—the KV-cache.
+
+Without caching, generating 100 tokens would require O(n²) compute—each new token attends to all previous tokens, and you do this 100 times. With KV-cache, only the new token's attention is computed while reusing cached values, making generation O(n) incremental.
 
 \`\`\`python
 # Without cache: O(n²) for n tokens
@@ -489,9 +543,15 @@ class CachedModel:
         return self.forward_with_cache(new_token, self.kv_cache)
 \`\`\`
 
+The KV-cache is why API providers charge differently for input vs. output tokens. Processing your input (the "prefill" phase) is parallel and efficient. Generating output requires sequential forward passes with growing cache—it's inherently slower and more expensive per token.
+
+**What this means for you**: Output tokens typically cost 2-3x more than input tokens. Design your applications accordingly—it's often better to provide more context (input) to get more focused, shorter responses (output).
+
 ## Understanding Hallucination
 
-[Hallucination] occurs because the model optimizes for fluency, not factuality:
+[Hallucination] is perhaps the most important limitation to understand when building AI applications. Models can confidently generate plausible-sounding but completely false information. This happens because the training objective is next-token prediction—optimizing for "what sounds likely to come next" rather than "what is actually true."
+
+During training, the model learned patterns like "The author of [famous book] is [author name]." When asked about a book it wasn't trained on, or when the pattern matching goes wrong, it generates a plausible-sounding author name—because that's what fits the pattern. The model has no internal mechanism for verifying facts against reality.
 
 \`\`\`python
 # The model sees patterns like:
@@ -502,13 +562,20 @@ class CachedModel:
 # because that's what fits the pattern
 \`\`\`
 
-Mitigations:
-1. **RAG**: Ground responses in retrieved documents
-2. **Lower temperature**: Reduce creativity
-3. **Explicit instructions**: "Say 'I don't know' if unsure"
-4. **Self-consistency**: Generate multiple answers, check agreement
+This pseudo-code illustrates the core problem: the model isn't looking up facts in a database, it's pattern-completing based on training data. Even confident, detailed responses may be entirely fabricated.
+
+**Practical mitigations**:
+1. **RAG**: Ground responses in retrieved documents—give the model access to verified information
+2. **Lower temperature**: Reduce creativity when you need accuracy
+3. **Explicit instructions**: Add "If you're not sure, say so" to your system prompt
+4. **Self-consistency**: Generate multiple answers at higher temperature, check if they agree
+5. **Verification layers**: For critical applications, add fact-checking pipelines
+
+Understanding hallucination changes how you architect AI systems. For applications where accuracy matters (medical, legal, financial), never trust model outputs without verification. Use RAG, cite sources, and implement human review for high-stakes decisions.
 
 ## Performance Considerations
+
+Building production AI applications requires understanding the performance characteristics of LLM inference. Three factors dominate: latency (time to response), throughput (requests per second), and cost (dollars per token).
 
 ### Latency Components
 
@@ -518,7 +585,13 @@ Mitigations:
 | First token | 100-500ms | Speculative decoding |
 | Per token | 10-50ms | Batching, quantization |
 
+The "time to first token" (TTFT) is dominated by processing your input prompt. After that, each subsequent token adds 10-50ms depending on model size. A 500-token response might take 5-25 seconds total. This is why streaming matters—users see progress rather than waiting for the complete response.
+
+**Optimization strategies**: Use smaller models when possible. Enable streaming for user-facing applications. Consider speculative decoding (using a small model to draft, large model to verify) for throughput-critical systems.
+
 ### Cost Estimation
+
+API costs add up quickly at scale. Understanding the pricing model helps you design cost-efficient systems.
 
 \`\`\`python
 def estimate_cost(prompt_tokens: int, completion_tokens: int,
@@ -533,19 +606,33 @@ def estimate_cost(prompt_tokens: int, completion_tokens: int,
             completion_tokens * p["output"]) / 1000
 \`\`\`
 
+Notice that GPT-4 is 20x more expensive than GPT-3.5-turbo. For many tasks—summarization, classification, simple Q&A—the cheaper model works just as well. Reserve expensive models for tasks that genuinely require their capabilities.
+
+**Cost optimization tips**: (1) Use the cheapest model that meets your quality bar. (2) Cache responses when possible—same input should give cached output. (3) Limit max_tokens to prevent verbose responses. (4) Compress conversation history rather than sending full transcripts. (5) Monitor usage and set alerts before you get surprised by bills.
+
 ## What's Next
 
-Now that you understand how models work internally, learn to control their behavior with [prompt engineering]!`,
+Now that you understand how models work internally—the transformer architecture, tokenization, training objectives, inference mechanics, and key limitations like hallucination—you're ready to learn how to control these models effectively. The next lesson on [prompt engineering] will teach you the techniques for getting exactly the outputs you want.`,
 
   advanced: `## LLM Architecture: Deep Technical Dive
 
-This lesson covers the mathematical foundations and implementation details of large language models, including attention mechanisms, training dynamics, and inference optimization.
+This lesson provides a rigorous treatment of the mathematical foundations and implementation details underlying large language models. We'll examine attention mechanisms at the linear algebra level, explore the theoretical basis for scaling laws, and understand the optimization techniques that make efficient [inference] possible. This knowledge is essential for researchers pushing the boundaries of AI capabilities and engineers building high-performance AI systems.
+
+The transformer architecture, despite its apparent simplicity, encodes several deep mathematical insights about sequence modeling. Understanding these foundations enables you to reason about model behavior, debug unexpected outputs, and contribute to advancing the field.
 
 ## Transformer Architecture Internals
 
 ### Multi-Head Self-Attention
 
-The core operation of [transformers]:
+The attention mechanism is the computational heart of [transformers]. At its core, attention computes a weighted average of value vectors, where weights are determined by the compatibility between query and key vectors. The mathematical formulation is:
+
+**Attention(Q, K, V) = softmax(QK^T / √d_k) V**
+
+The scaling factor √d_k is crucial and often overlooked. Without it, as embedding dimension increases, the dot products grow in magnitude, pushing softmax into regions of extremely small gradients. This would make training unstable. The 1/√d_k factor ensures that regardless of d_k, the variance of dot products remains approximately 1, keeping gradients well-behaved.
+
+Multi-head attention extends this by running multiple attention operations in parallel with different learned projections. Each "head" can attend to different types of relationships: one head might focus on syntactic dependencies, another on semantic similarity, another on positional proximity. The outputs are concatenated and projected back to the model dimension.
+
+Why does this work so well? The attention mechanism provides a direct path for information to flow between any two positions in the sequence, regardless of distance. In RNNs, information from position 0 must pass through all intermediate positions to reach position 100, degrading along the way. In transformers, position 100 can attend directly to position 0 with a single matrix operation.
 
 \`\`\`python
 import torch
@@ -592,9 +679,17 @@ class MultiHeadAttention(nn.Module):
         return self.W_o(attn_output)
 \`\`\`
 
+Key implementation details to note: (1) The view and transpose operations reshape tensors to process all heads in parallel—this is pure efficiency, mathematically equivalent to running n_heads separate attention operations. (2) The causal mask (setting future positions to -inf before softmax) ensures autoregressive property for language modeling—each position can only attend to itself and previous positions. (3) The final W_o projection allows the model to learn how to combine information from different heads.
+
+The computational complexity is O(n²d) where n is sequence length and d is model dimension. The quadratic scaling in sequence length is why [context window] extension is challenging and why innovations like sparse attention, linear attention, and Flash Attention are active research areas.
+
 ### Positional Encoding: RoPE
 
-Rotary Position Embeddings (RoPE) enable length extrapolation:
+Since attention is permutation-invariant (it doesn't know word order without help), we must inject positional information. The original transformer used fixed sinusoidal encodings, but modern LLMs typically use Rotary Position Embeddings (RoPE), introduced by Su et al. in 2021.
+
+RoPE's key insight is to encode position through rotation in the embedding space. For a position m and embedding dimensions (i, i+1), we rotate by angle m·θ_i where θ_i decreases exponentially with dimension index. This encodes relative position: the dot product between rotated queries and keys depends only on their relative positions, not absolute positions.
+
+The mathematical elegance is that relative position information is naturally incorporated into the attention scores. If query at position m and key at position n are both rotated, their dot product contains a term that depends on (m-n). This makes RoPE inherently better at length generalization—the model learns relationships based on relative distance, which transfers to unseen sequence lengths.
 
 \`\`\`python
 def apply_rope(x, positions, dim):
@@ -617,9 +712,19 @@ def apply_rope(x, positions, dim):
     return rotated
 \`\`\`
 
+The implementation pairs adjacent dimensions and applies 2D rotation. The frequency schedule (10000^(-2i/d)) means lower-indexed dimensions rotate faster, capturing fine-grained position differences, while higher-indexed dimensions rotate slower, capturing broader position information. This multi-scale encoding is analogous to how sinusoidal encodings work but with better extrapolation properties.
+
+**Research context**: RoPE has become the default in modern LLMs (LLaMA, Mistral, Qwen) because it enables training on short sequences and inference on longer ones. Extensions like YaRN (Yet another RoPE extensioN) fine-tune the frequency scaling to push extrapolation even further.
+
 ## Tokenization: BPE Implementation
 
-[Tokens] are produced by Byte-Pair Encoding:
+Byte-Pair Encoding is more than an engineering detail—it represents a learned compression scheme that balances vocabulary size, sequence length, and semantic coherence. Understanding BPE explains many model behaviors: why [tokens] split unexpectedly, why multilingual performance varies, and why tokenization affects model capabilities.
+
+The algorithm starts with a character-level vocabulary and iteratively merges the most frequent adjacent pairs. After sufficient iterations, common words become single tokens while rare words remain decomposed. This is optimal in an information-theoretic sense: frequently occurring patterns get shorter codes (single tokens), similar to Huffman coding.
+
+Vocabulary size is a critical hyperparameter. Larger vocabularies (100K+ tokens) mean shorter sequences (good for context efficiency) but more [parameters] in the embedding layer and sparser training signal per token. Smaller vocabularies (32K tokens) mean longer sequences but denser training. The Chinchilla-optimal vocabulary size scales with model size.
+
+Importantly, BPE training is separate from model training. The tokenizer is trained once on a representative corpus, then frozen. This means tokenization quality depends on whether the training corpus matches your use case. Technical text, code, and non-English languages may tokenize poorly if underrepresented in the tokenizer training data.
 
 \`\`\`python
 from collections import Counter
@@ -665,11 +770,21 @@ class BPETokenizer:
             word_freqs = new_word_freqs
 \`\`\`
 
+The merge list learned during training defines the tokenization algorithm. At inference time, we apply merges greedily: start with characters, apply each merge rule in order. The </w> end-of-word marker ensures that "token" appearing mid-word is tokenized differently than "token" as a standalone word—important for maintaining word boundaries.
+
+**What to notice**: The greedy nature means tokenization isn't always optimal. Some rare words might be tokenized better with a different merge order. Also, byte-level BPE (used by GPT-2 onwards) starts with bytes rather than characters, ensuring any input can be tokenized (including binary data) at the cost of longer sequences for multibyte characters.
+
 ## Training Dynamics
 
 ### Loss Function and Gradients
 
-Cross-entropy loss with label smoothing:
+The training objective for language models is [next token prediction] formalized as cross-entropy loss. For each position in the sequence, the model outputs a probability distribution over the vocabulary, and we compute the negative log-probability of the actual next token.
+
+**Loss = -Σ log P(x_t | x_<t)**
+
+This sum is taken over all positions in the training sequence. Minimizing this loss is equivalent to maximizing the likelihood of the training data under the model—classic maximum likelihood estimation.
+
+Label smoothing is a regularization technique that prevents overconfidence. Instead of training the model to put all probability mass on the correct token (hard targets), we redistribute a small amount (typically 10%) uniformly across all tokens. This encourages the model to maintain some uncertainty, improving generalization and reducing [hallucination] tendencies.
 
 \`\`\`python
 def compute_loss(logits, targets, label_smoothing=0.1):
@@ -695,9 +810,17 @@ def compute_loss(logits, targets, label_smoothing=0.1):
     return loss.mean()
 \`\`\`
 
+The implementation shows the mathematical decomposition: label-smoothed loss is a weighted combination of standard cross-entropy (hard targets) and KL divergence to uniform distribution (smoothing term). The mean over -log_probs computes this uniform KL divergence efficiently.
+
+**Practical insight**: Label smoothing of 0.1 is standard but can be tuned. Higher smoothing increases regularization at the cost of training speed. For fine-tuning on small datasets, higher smoothing often helps.
+
 ### Chinchilla Scaling Laws
 
-Optimal compute allocation:
+Scaling laws describe how model performance (measured as loss) improves predictably with compute, data, and parameters. The Chinchilla paper (Hoffmann et al., 2022) established that previous models were significantly undertrained—more compute should go to training data, not just model size.
+
+The key finding: **optimal compute allocation scales both parameters and data equally**. For a compute budget C, both optimal parameters N and optimal tokens D scale as C^0.5. This means roughly 20 tokens per parameter is optimal—GPT-3 (175B params, 300B tokens = 1.7 tokens/param) was undertrained by 10x.
+
+These laws emerge from a deeper mathematical relationship: loss scales as a power law in both parameters and data, with no interaction terms. L(N, D) ≈ A/N^α + B/D^β + irreducible_loss. Minimizing total loss for fixed compute gives the Chinchilla-optimal allocation.
 
 \`\`\`python
 def optimal_scaling(compute_budget_flops):
@@ -723,9 +846,19 @@ scaling = optimal_scaling(1e24)
 # optimal_tokens: ~1.1T
 \`\`\`
 
+The constants (0.0057, 20) are empirically fitted to experimental data. The square-root relationship is the theoretical result.
+
+**Research implications**: Scaling laws enable planning large training runs before executing them. You can predict final loss from early training dynamics. However, scaling laws describe loss, not capabilities—emergent abilities like reasoning don't scale smoothly and are harder to predict.
+
 ## Inference Optimization
 
+Efficient inference is critical for deploying LLMs in production. The key challenges are memory bandwidth (moving weights from memory to compute) and the sequential nature of autoregressive generation. Several techniques address these bottlenecks.
+
 ### KV-Cache with Memory Efficiency
+
+The KV-cache eliminates redundant computation during generation. In naive implementation, generating token n requires recomputing attention over all previous tokens—O(n) work per token, O(n²) total. With KV-cache, we store the key and value projections for all previous tokens, requiring only O(1) new computation per token.
+
+The memory cost is substantial: for each layer, we store K and V tensors of shape (batch, seq, heads, d_k). For a 70B model with 80 layers, 64 heads, and d_k=128, generating a 4K sequence for batch size 1 requires ~40GB just for KV-cache (in fp16). This is often the limiting factor for long-context inference.
 
 \`\`\`python
 class KVCache:
@@ -758,9 +891,17 @@ class KVCache:
         )
 \`\`\`
 
+Pre-allocation avoids memory allocation overhead during generation. The update function efficiently appends new K, V states and returns the full cache for attention computation. In production systems, paged attention (vLLM) manages cache memory more dynamically, enabling longer sequences and higher batch sizes.
+
+**Optimization insight**: KV-cache is why "prefill" (processing input prompt) and "decode" (generating output) have different performance characteristics. Prefill is compute-bound and parallelizable; decode is memory-bandwidth-bound and sequential.
+
 ### Speculative Decoding
 
-Use small model to draft, large model to verify:
+Speculative decoding accelerates generation by using a small "draft" model to propose multiple tokens, then verifying them with the large "target" model in a single forward pass. This exploits the fact that small models often agree with large models, and verification is parallelizable while drafting is sequential.
+
+The theoretical speedup depends on the acceptance rate α (probability that draft tokens match target distribution). With acceptance rate α and speculation length k, effective tokens per forward pass is k·α/(1-(1-α)^k). For α=0.7 and k=4, this gives ~2x speedup.
+
+The key insight is that rejected tokens still provide information. When the target model rejects a draft token, we can sample from a corrected distribution that guarantees the overall output matches the target model's distribution exactly—no quality degradation.
 
 \`\`\`python
 def speculative_decode(prompt, draft_model, target_model, k=4):
@@ -800,7 +941,15 @@ def speculative_decode(prompt, draft_model, target_model, k=4):
     return detokenize(tokens)
 \`\`\`
 
+The acceptance probability formula (target_prob / draft_prob) comes from importance sampling theory. When draft_prob > target_prob (draft is overconfident), we reject with probability proportional to the excess. The adjusted sampling for rejected tokens ensures we sample from max(0, target - draft) normalized, recovering the correct distribution.
+
+**Production considerations**: The draft model must be fast (small) and well-calibrated (high acceptance rate). Fine-tuning a small model on the target model's outputs can improve acceptance rates significantly.
+
 ### Quantization for Efficiency
+
+Quantization reduces memory and compute by using lower-precision numbers. Full-precision weights are 32-bit floats; inference commonly uses 16-bit; aggressive quantization goes to 8-bit or even 4-bit integers. A 4-bit quantized 70B model fits in ~35GB instead of ~140GB, enabling single-GPU deployment.
+
+The key trade-off is accuracy vs efficiency. Quantization introduces error, but models are surprisingly robust to it—the redundancy in overparameterized networks provides error tolerance. Careful quantization strategies (per-channel scaling, outlier handling) minimize quality degradation.
 
 \`\`\`python
 def quantize_weights(weights: torch.Tensor, bits: int = 4):
@@ -818,9 +967,19 @@ def dequantize(quantized: torch.Tensor, scale: float):
     return quantized.float() * scale
 \`\`\`
 
+This shows symmetric quantization: we find the maximum absolute value, compute a scale factor, round to integers, and clamp to the representable range. At inference, we dequantize back to float for computation. More sophisticated methods (GPTQ, AWQ, SqueezeLLM) use second-order information and learned scale factors for better accuracy.
+
+**Key insight**: Quantization primarily helps with memory bandwidth, not compute. On modern GPUs, compute is often faster than moving data from memory. Smaller weights mean faster memory transfers, which translates to faster generation.
+
 ## [Hallucination] Mitigation at Inference
 
+Hallucination remains one of the most significant challenges in deploying LLMs. At the inference level (post-training), several techniques can reduce but not eliminate hallucinations. Understanding why these work helps in combining them effectively.
+
 ### Self-Consistency Checking
+
+Self-consistency leverages the observation that correct answers tend to be more stable across generations while hallucinations vary. By generating multiple responses at moderate temperature and selecting the most consistent one, we filter out "unlucky" samples that drift into hallucination.
+
+The mathematical justification: if the model has a mode at the correct answer and noise around it, higher temperature samples will sometimes hit the correct mode and sometimes miss. The correct answer, being a mode, will appear more frequently across samples. Taking the most representative sample (highest average similarity to others) recovers this mode.
 
 \`\`\`python
 async def self_consistent_generate(prompt: str, n_samples: int = 5):
@@ -841,9 +1000,17 @@ async def self_consistent_generate(prompt: str, n_samples: int = 5):
     return responses[best_idx], avg_similarity[best_idx]
 \`\`\`
 
+The similarity score also serves as a confidence measure—high average similarity suggests the model is confident and consistent, while low similarity indicates uncertainty or multiple possible answers.
+
+**When to use**: Self-consistency adds latency (n parallel generations) and cost (n× tokens). Use it for high-stakes queries where accuracy matters more than speed. The confidence score can trigger human review when low.
+
 ## Extending Context with ALiBi
 
-Attention with Linear Biases for length generalization:
+Attention with Linear Biases (ALiBi) enables length extrapolation—training on short sequences but inferring on longer ones. This is valuable because training on long sequences is expensive (O(n²) attention), while inference on long sequences is often necessary.
+
+ALiBi's approach is elegant: instead of adding position information to embeddings (which must be learned for each position), it adds a position-dependent bias directly to attention scores. The bias is linear in position distance and computed, not learned. Since the bias formula generalizes to any position, the model naturally handles unseen lengths.
+
+The per-head slopes form a geometric sequence, giving each head a different "attention span." Heads with steep slopes focus locally (nearby tokens dominate); heads with gentle slopes attend globally (distant tokens remain relevant). This multi-scale structure emerges automatically from the mathematical form.
 
 \`\`\`python
 def alibi_attention(Q, K, V, n_heads):
@@ -866,12 +1033,20 @@ def alibi_attention(Q, K, V, n_heads):
     return torch.matmul(F.softmax(scores, dim=-1), V)
 \`\`\`
 
+The slope formula (2^(-8/n_heads * i)) ensures the first head has the steepest slope (most local) and the last head has the gentlest (most global). The negative absolute distance means closer tokens always have higher bias, with the rate controlled by slope. At inference, we simply extend the positions array—no retraining required.
+
+**Research context**: ALiBi was superseded by RoPE in most modern models, but understanding both helps when working with different model families. The length extrapolation problem remains active, with solutions like YaRN, LongRoPE, and continued pretraining approaches.
+
 ## Further Exploration
 
-- **Flash Attention**: IO-aware exact attention algorithm
-- **Mixture of Experts**: Sparse activation for efficiency
-- **Constitutional AI**: Training for safety and helpfulness
-- **RLHF**: Reinforcement learning from human feedback`,
+The field moves rapidly. Here are key topics for continued learning:
+
+- **Flash Attention**: IO-aware exact attention that reduces memory access, enabling longer sequences and faster training. Essential for any serious LLM work.
+- **Mixture of Experts (MoE)**: Sparse activation for efficiency—only a subset of [parameters] activate per token. Enables larger total capacity at fixed inference cost.
+- **Constitutional AI (CAI)**: Anthropic's approach to training helpful, harmless, and honest models through AI-generated feedback.
+- **RLHF and DPO**: Reinforcement learning from human feedback and Direct Preference Optimization—how models are aligned to human preferences after pretraining.
+
+Each topic deserves deep study. The foundations covered here—attention mechanics, scaling laws, inference optimization—provide the conceptual framework for understanding these advances.`,
 };
 
 // Quiz questions
