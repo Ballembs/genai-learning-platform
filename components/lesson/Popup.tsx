@@ -12,8 +12,6 @@ import { useIsMobile } from '@/hooks/useMediaQuery';
 import { lessonData } from '@/content/lessons';
 import { getCached, setCache } from '@/lib/cache';
 import type { UserLevel, UserGoal } from '@/types';
-import { ShowTheWiring } from '@/components/ui/ShowTheWiring';
-import { getWiring } from '@/lib/wiring';
 
 const POPUP_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -397,13 +395,6 @@ export function Popup() {
                       <MermaidDiagram chart={content.diagram} />
                     </motion.div>
                   )}
-
-                  {/* Show the Wiring */}
-                  <ShowTheWiring
-                    compact
-                    label={getWiring('popup').label}
-                    steps={getWiring('popup').steps}
-                  />
                 </motion.div>
               ) : (
                 <motion.p

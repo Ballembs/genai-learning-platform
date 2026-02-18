@@ -16,7 +16,6 @@ import {
   Circle,
   User,
   Settings,
-  Zap,
 } from 'lucide-react';
 import { useUserStore } from '@/lib/store';
 import type { UserLevel } from '@/types';
@@ -92,7 +91,7 @@ const levelLabels: Record<UserLevel, { label: string; color: string }> = {
 };
 
 export default function CoursePage() {
-  const { currentLevel, setLevel, profile, showWiring, toggleWiring } = useUserStore();
+  const { currentLevel, setLevel, profile } = useUserStore();
   const [showLevelSelector, setShowLevelSelector] = useState(false);
 
   // Get progress for each lesson
@@ -153,23 +152,6 @@ export default function CoursePage() {
                   </div>
                 )}
               </div>
-
-              {/* Show the Wiring Toggle */}
-              <button
-                onClick={toggleWiring}
-                className={`
-                  flex items-center gap-1 px-3 py-2 sm:py-1.5 rounded-full text-xs sm:text-sm font-medium
-                  transition-all touch-target
-                  ${showWiring
-                    ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }
-                `}
-                title={showWiring ? 'Hide AI wiring' : 'Show AI wiring'}
-              >
-                <Zap className={`w-3.5 h-3.5 ${showWiring ? 'text-amber-500' : 'text-gray-400'}`} />
-                <span className="hidden sm:inline">Wiring</span>
-              </button>
 
               <Link
                 href="/profile"

@@ -15,7 +15,6 @@ import {
   User,
   List,
   TrendingUp,
-  Zap,
 } from 'lucide-react';
 import { useUserStore, useNavigationStore } from '@/lib/store';
 import { LessonContent } from '@/components/lesson/LessonContent';
@@ -30,7 +29,7 @@ export default function LessonPage() {
   const router = useRouter();
   const lessonSlug = params.lessonSlug as string;
   
-  const { currentLevel, hasExplored, showWiring, toggleWiring } = useUserStore();
+  const { currentLevel, hasExplored } = useUserStore();
   const { setCurrentLesson, setBreadcrumbs } = useNavigationStore();
 
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -129,22 +128,6 @@ export default function LessonPage() {
               <div className="text-xs sm:text-sm text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
                 {scrollProgress}%
               </div>
-              {/* Show the Wiring Toggle */}
-              <button
-                onClick={toggleWiring}
-                className={`
-                  flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-medium
-                  transition-all
-                  ${showWiring
-                    ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }
-                `}
-                title={showWiring ? 'Hide AI wiring' : 'Show AI wiring'}
-              >
-                <Zap className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${showWiring ? 'text-amber-500' : 'text-gray-400'}`} />
-                <span className="hidden sm:inline">Wiring</span>
-              </button>
             </div>
           </div>
         </div>
