@@ -44,6 +44,23 @@ function sanitizeMermaidChart(chart: string): string {
   return sanitized;
 }
 
+// Clean up any Mermaid error elements from the DOM
+function cleanupMermaidErrors() {
+  if (typeof document === 'undefined') return;
+  // Remove elements with error content that Mermaid may have inserted
+  document.querySelectorAll('svg').forEach((el) => {
+    if (el.textContent?.includes('Syntax error')) {
+      el.parentElement?.remove();
+    }
+  });
+  // Remove any orphaned Mermaid error containers
+  document.querySelectorAll('[id*="mermaid"]').forEach((el) => {
+    if (el.textContent?.includes('Syntax error') && !el.closest('.diagram-container')) {
+      el.remove();
+    }
+  });
+}
+
 function MermaidDiagramInner({ chart, className = '' }: MermaidDiagramProps) {
   const uniqueId = useId();
   const [svg, setSvg] = useState<string>('');
@@ -53,6 +70,12 @@ function MermaidDiagramInner({ chart, className = '' }: MermaidDiagramProps) {
 
   // Clean and sanitize the chart string
   const cleanChart = sanitizeMermaidChart(chart);
+
+  // Cleanup any stray Mermaid errors on mount
+  useEffect(() => {
+    cleanupMermaidErrors();
+    return () => cleanupMermaidErrors();
+  }, []);
 
   // Create a stable, valid HTML ID from the React useId
   const diagramId = `mermaid-${uniqueId.replace(/:/g, '-')}`;
@@ -111,6 +134,14 @@ function MermaidDiagramInner({ chart, className = '' }: MermaidDiagramProps) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to render diagram';
       setError(errorMessage);
       setSvg('');
+
+      // Clean up any error elements Mermaid may have added to the DOM
+      const errorElements = document.querySelectorAll('[id^="d"]');
+      errorElements.forEach((el) => {
+        if (el.classList.contains('error-icon') || el.textContent?.includes('Syntax error')) {
+          el.remove();
+        }
+      });
     } finally {
       setIsLoading(false);
     }
