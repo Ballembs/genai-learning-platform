@@ -426,9 +426,13 @@ Each agent is specialized, and together they do more than any single agent could
 
   intermediate: `## Building AI Agents
 
-This lesson covers agent architectures, tool integration, and implementation patterns for building autonomous AI systems.
+This lesson covers agent architectures, tool integration, and implementation patterns for building autonomous AI systems. Understanding how to build effective [agents] requires grasping a fundamental shift in how we think about AI: instead of single-turn question-answering, agents operate in a loop, continuously reasoning about goals, taking actions, and adapting based on results.
+
+The core insight behind agentic AI is that [large language models] are not just text generators—they're reasoning engines capable of making decisions. When you give an LLM the ability to call functions, search the web, or execute code, it transforms from a passive responder into an active problem solver. This lesson will teach you how to architect these systems, handle the inevitable failures, and build robust agents that can tackle complex real-world tasks.
 
 ## Agent Architecture Overview
+
+Every agent architecture shares a common pattern: an LLM "brain" that reasons and makes decisions, connected to external capabilities through [tools], and equipped with [memory] to maintain context across multiple steps. The diagram below illustrates this architecture. Notice how the LLM Core sits at the center, receiving user input and coordinating between the Prompt Manager (which maintains context and formats requests), the Tool Executor (which handles function calls), and the Memory System (which provides both short-term conversational context and long-term knowledge retrieval).
 
 \`\`\`mermaid
 flowchart TB
@@ -449,9 +453,17 @@ flowchart TB
     A --> K[Output]
 \`\`\`
 
+This architecture enables what we call the Think→Act→Observe loop. The LLM receives input, thinks about what action to take, executes that action via tools, observes the result, and then decides whether to continue or return a final answer. This loop is the foundation of all agentic behavior, from simple single-tool invocations to complex multi-step reasoning chains.
+
 ## [Function Calling] Implementation
 
+[Function calling] is the mechanism that allows LLMs to invoke external tools in a structured, reliable way. Rather than asking the model to generate arbitrary text that might describe a function call, modern LLM APIs support a dedicated mode where the model outputs structured JSON that precisely specifies which function to call and with what arguments. This is a critical capability—without it, agents would constantly fail due to parsing errors and malformed tool invocations.
+
+The key insight behind function calling is that LLMs can be taught to reason about *when* to use a tool and *how* to parameterize it. When you provide a tool schema (name, description, and parameters), the model learns to recognize situations where that tool would be helpful and generate appropriate arguments. This is remarkably similar to how humans decide which tool to use—we don't just pattern-match on keywords, we reason about our goal and select the tool most likely to help achieve it.
+
 ### Defining Tools
+
+The first step in building an agent is defining its [toolbox]. Each tool needs a clear name, a descriptive explanation of what it does (the model uses this to decide when to use it), a parameter schema defining what inputs it accepts, and the actual function implementation. The description is particularly important—a vague description leads to a model that doesn't know when to use the tool, while an overly specific description limits the model's creativity in applying it.
 
 \`\`\`python
 from typing import Callable
@@ -507,7 +519,13 @@ tools = [
 ]
 \`\`\`
 
+Notice how each tool includes a JSON Schema for its parameters. This schema serves two purposes: it tells the LLM what arguments the tool expects, and it enables [constrained decoding]—the model's output is forced to conform to the schema, eliminating syntax errors. The \`required\` field is crucial: it tells the model which parameters must always be provided versus which can be omitted.
+
 ### Using OpenAI Function Calling
+
+Now let's see how to integrate these tools with an LLM API. The pattern is straightforward: we send the user message along with our tool schemas, the model either responds with text or requests a tool call, we execute the requested tool and return the result, and then the model continues reasoning until it has a final answer. This loop continues until the model generates a response without any tool calls.
+
+The critical detail in the implementation below is the message structure. When the model requests a tool call, we must append its message (including the tool_call metadata) to the conversation history, then add a \`tool\` role message containing the result. This maintains a complete audit trail of the agent's reasoning and actions, which is essential for debugging and for the model to remember what it has already tried.
 
 \`\`\`python
 from openai import OpenAI
@@ -562,9 +580,19 @@ def run_agent(user_message: str, tools: list[Tool]) -> str:
             return message.content
 \`\`\`
 
+This implementation handles [parallel function calls]—a powerful feature where the model can request multiple tool invocations in a single turn. For example, if asked "What's the weather in Paris and the current price of Bitcoin?", the model might request both the weather tool and a price lookup tool simultaneously, rather than sequentially. This dramatically improves latency for multi-step tasks.
+
+Error handling is notably absent from this basic implementation. In production, you'd need to handle cases where the tool throws an exception, where the model hallucinates a non-existent tool, or where parameter validation fails. We'll address these concerns in the Error Handling section below.
+
 ## The [ReAct] Pattern
 
+While function calling provides the mechanical ability to invoke tools, [ReAct] (Reasoning + Acting) provides a cognitive framework for *how* the agent should think. The key insight from the original ReAct paper (Yao et al., 2022) is that interleaving reasoning traces with actions outperforms both pure reasoning (chain-of-thought alone) and pure acting (tool use without explicit reasoning).
+
+Why does this work? When an agent explicitly states its reasoning before each action, it forces the model to commit to a plan and provides context for interpreting the action's result. The "Thought" step serves as a working memory where the model can track its progress, note intermediate conclusions, and reason about what to do next. Without this explicit reasoning, agents tend to loop, repeat actions, or lose track of their goal.
+
 ### Implementation
+
+The ReAct pattern can be implemented through careful [prompt engineering]. We instruct the model to follow a specific format: first state a Thought explaining what it plans to do and why, then specify an Action (tool name) and Action Input (parameters), wait for an Observation (the tool's output), and repeat until it can provide a Final Answer. This structure transforms the free-form capabilities of an LLM into a disciplined problem-solving process.
 
 \`\`\`python
 REACT_PROMPT = """
@@ -626,9 +654,33 @@ def react_agent(question: str, tools: dict[str, Callable]) -> str:
     return "Max iterations reached"
 \`\`\`
 
+Let's trace through a real example to see how this works in practice. Suppose the user asks: "What is the population of the largest country by area, and what percentage of the world population does it represent?"
+
+**Step 1:** Thought: "I need to find the largest country by area first. I'll search for this information." Action: search, Action Input: "largest country by area"
+
+**Step 2:** Observation: "Russia is the largest country by area at 17.1 million km²"
+
+**Step 3:** Thought: "Now I know it's Russia. I need to find Russia's population." Action: search, Action Input: "Russia population 2024"
+
+**Step 4:** Observation: "Russia's population is approximately 144 million"
+
+**Step 5:** Thought: "I have Russia's population. Now I need world population to calculate the percentage." Action: search, Action Input: "world population 2024"
+
+**Step 6:** Observation: "World population is approximately 8 billion"
+
+**Step 7:** Thought: "I have all the data. Let me calculate: 144 million / 8 billion = 1.8%." Final Answer: "Russia, the largest country by area, has a population of about 144 million, representing approximately 1.8% of the world's population."
+
+Notice how each thought explicitly states what the agent knows and what it still needs. This [explicit reasoning] prevents the model from skipping steps or making unwarranted assumptions.
+
 ## [Planning] Strategies
 
+Some tasks are too complex for step-by-step ReAct execution. Consider "Research the competitive landscape of the electric vehicle market and create a summary report." This requires multiple research threads, synthesis, and structured output—it's not a linear chain of actions. For such tasks, we need explicit [planning] strategies.
+
+The key insight is that planning and execution are separate cognitive processes. When you plan, you think abstractly about goals, subgoals, and dependencies. When you execute, you focus on concrete actions. By separating these phases, we can create more reliable agents that don't lose track of the bigger picture while handling details.
+
 ### Plan-and-Execute
+
+The [plan-and-execute] pattern generates a complete plan upfront, then executes each step. This has several advantages: the agent commits to a strategy before taking any actions (reducing mid-task confusion), the plan provides a scaffold for tracking progress, and if a step fails, we have a clear context for replanning. The disadvantage is reduced flexibility—new information discovered during execution doesn't automatically update the plan.
 
 \`\`\`python
 class PlanAndExecuteAgent:
@@ -688,9 +740,19 @@ Otherwise, provide your analysis.
         return self._synthesize(goal, plan, results)
 \`\`\`
 
+The planner and executor can use different models or configurations. A common pattern uses a larger, more capable model (like GPT-4) for planning where broad reasoning matters, and a smaller, faster model (like GPT-3.5-turbo) for individual execution steps where the plan provides sufficient guidance. This balances quality and cost.
+
+Production systems often implement [replanning] triggers: if a step fails multiple times, if the execution deviates significantly from expectations, or if new information invalidates the original plan, the agent returns to the planning phase with updated context. This creates a robust system that can recover from unexpected situations.
+
 ## Agent Memory Systems
 
+Memory is what separates a capable agent from a truly useful one. Without memory, every interaction starts from scratch—the agent forgets what it learned, repeats mistakes, and fails to build on past successes. Effective agents need multiple types of memory: [working memory] for the current task (what tools have been called, what results returned), [episodic memory] for past interactions (what the user asked before, what approaches worked), and [semantic memory] for general knowledge (facts learned across all interactions).
+
+The challenge is that LLM [context windows], while growing, remain finite. An agent working on a multi-hour task can easily generate megabytes of intermediate outputs that won't fit in any context window. Memory systems must therefore be selective, summarizing and prioritizing information to keep the most relevant context accessible.
+
 ### Conversation Memory
+
+The simplest form of memory is a sliding window of recent messages. This implementation maintains a token budget, trimming old messages when the conversation exceeds the limit. The key decision is *what* to trim: we preserve the system message (which defines the agent's identity and instructions) and prioritize recent exchanges over older ones, on the assumption that recent context is more relevant.
 
 \`\`\`python
 class ConversationMemory:
@@ -721,7 +783,11 @@ class ConversationMemory:
         return self.messages.copy()
 \`\`\`
 
+This simple approach works for short interactions but falls apart for complex, multi-session tasks. When you trim old messages, you lose potentially valuable context. More sophisticated approaches use [summarization]—periodically compressing older exchanges into summaries that capture key information while using fewer tokens. The system message might then include a "story so far" summary that grows and updates as the conversation progresses.
+
 ### Semantic Memory with Retrieval
+
+For long-term memory that persists across sessions and scales to thousands of interactions, we need [retrieval-augmented] memory. This approach, which you'll recognize from our RAG lesson, embeds memories as vectors and retrieves relevant ones based on semantic similarity to the current context. The agent doesn't carry its entire history in context—instead, it queries for relevant memories when needed.
 
 \`\`\`python
 class SemanticMemory:
@@ -758,7 +824,15 @@ class SemanticMemory:
         return "Relevant past information:\\n" + "\\n".join(f"- {m}" for m in memories)
 \`\`\`
 
+The \`build_context\` method shows how semantic memory integrates with the agent loop. Before each reasoning step, we query for memories relevant to the current task and inject them into the prompt. This gives the agent access to a vast repository of past experience without bloating the context window. The metadata field enables filtering—you might store reflections, successful strategies, and error patterns as separate memory types, then retrieve the most relevant type for each situation.
+
+The most powerful agents combine both memory types: conversation memory provides immediate context (what just happened), while semantic memory provides long-term knowledge (what worked in similar situations before). This mirrors human cognition, where we maintain both short-term working memory and long-term episodic and semantic memory.
+
 ## Error Handling and Recovery
+
+Agents fail. Tools return errors, APIs timeout, the model generates malformed requests, and unexpected inputs break assumptions. Robust agents must handle failures gracefully—retrying when appropriate, adapting strategy when retries fail, and knowing when to escalate to a human. The difference between a demo agent and a production agent is largely error handling.
+
+The implementation below shows a retry pattern with [LLM-assisted recovery]. When a tool fails, instead of blindly retrying with the same arguments, we ask the model to analyze the error and suggest a correction. This works remarkably well—models can often diagnose issues like "the API requires a date in YYYY-MM-DD format, but you passed MM/DD/YYYY" and fix them.
 
 \`\`\`python
 class RobustAgent:
@@ -796,7 +870,15 @@ Suggest corrected arguments or an alternative approach.
         return False, "Max retries exceeded"
 \`\`\`
 
+Beyond retry logic, production agents implement [circuit breakers] (stop calling a failing tool after repeated failures), [fallback strategies] (use an alternative tool or approach), and [escalation paths] (notify a human when automated recovery fails). The goal is graceful degradation—when perfect execution isn't possible, deliver the best result possible and clearly communicate limitations.
+
+A subtle but important consideration is [error observability]. When an agent fails, you need to understand why. This means logging not just the final error, but the entire decision chain leading up to it: what was the model's reasoning? What tool was called with what parameters? What did the tool return? Without this context, debugging agent failures becomes nearly impossible.
+
 ## Agent Evaluation
+
+How do you know if your agent is any good? Unlike traditional software with deterministic outputs, agents make judgment calls, take varied paths to solutions, and produce results that are "correct" in different ways. [Agent evaluation] requires thinking beyond simple pass/fail metrics to capture nuanced aspects of agent behavior.
+
+The implementation below shows a basic evaluation framework. We run the agent on a test suite and check whether the output contains expected elements. But this only scratches the surface. You'll also want to track: How many tool calls did the agent make (efficiency)? Did it use the right tools (appropriateness)? Did it avoid harmful actions (safety)? How long did it take (latency)? Did it handle edge cases gracefully (robustness)?
 
 \`\`\`python
 def evaluate_agent(agent, test_cases: list[dict]) -> dict:
@@ -836,15 +918,27 @@ def evaluate_agent(agent, test_cases: list[dict]) -> dict:
     return results
 \`\`\`
 
-**You've completed the course!** You now have the knowledge to build sophisticated AI applications.`,
+Real-world evaluation often requires [human-in-the-loop assessment]. You might run the agent on a set of tasks, have humans rate the quality of outputs, and compute inter-rater reliability. For safety-critical applications, you'll want [red-team testing]—deliberately trying to make the agent behave badly (following harmful instructions, leaking information, taking unauthorized actions) to identify vulnerabilities before deployment.
+
+The most mature approach is [online evaluation]—monitoring agent behavior in production and measuring real-world outcomes. Did users find the agent helpful? Did they complete their tasks? Did they report errors? This closes the loop from development to deployment, ensuring your agent continues to work well as the world changes.
+
+You now have the foundation to build production-grade agents. The intermediate techniques covered here—function calling, ReAct reasoning, planning, memory systems, error handling, and evaluation—form the core toolkit for agentic AI development. The advanced section explores multi-agent systems, self-reflection, and production deployment patterns that take these foundations further.`,
 
   advanced: `## Advanced Agent Architectures
 
-This lesson covers production agent patterns, multi-agent systems, and cutting-edge techniques for building reliable autonomous AI systems.
+This lesson covers production agent patterns, [multi-agent] systems, and cutting-edge techniques for building reliable autonomous AI systems. While the intermediate section focused on building individual agents, real-world applications often require more sophisticated architectures: agents that coordinate with each other, learn from their mistakes, and operate safely at scale.
+
+The key insight at this level is that agent systems are [distributed systems]—they face all the challenges of coordination, consistency, and failure handling that distributed computing has studied for decades, plus the unique challenge of reasoning components that are probabilistic rather than deterministic. The patterns in this section draw from both distributed systems theory and emerging best practices from the AI research community.
 
 ## Agent Design Patterns
 
+Production agent systems need clear architectural patterns to remain maintainable and debuggable. Just as software engineering evolved patterns like MVC and microservices, agent engineering is developing its own vocabulary of reusable designs. These patterns address common challenges: How do you coordinate complex multi-step workflows? How do you recover from partial failures? How do you maintain observability into what the agent is doing and why?
+
 ### The Orchestrator Pattern
+
+The [orchestrator pattern] implements a state machine that explicitly tracks where the agent is in its problem-solving process. Rather than relying on the LLM to implicitly manage state through conversation history, we externalize state into discrete phases: PLANNING, EXECUTING, REFLECTING, COMPLETE, and FAILED. This makes the agent's behavior predictable and debuggable—you can always answer "what is the agent doing right now?" by checking its state.
+
+The power of this pattern lies in the REFLECTING state. After executing actions, the agent steps back to evaluate progress: Did we achieve the goal? What worked? What failed? Should we replan? This [metacognitive loop] catches issues that would derail simpler agents—noticing when a plan isn't working, when tool outputs don't match expectations, or when the goal itself needs clarification.
 
 \`\`\`python
 from enum import Enum
@@ -976,9 +1070,19 @@ Output JSON with keys: goal_achieved, analysis, next_action
         )
 \`\`\`
 
+Several design decisions in this implementation deserve attention. The \`max_iterations\` limit prevents infinite loops—a common failure mode where agents cycle through the same actions without making progress. The reflection storage creates a [learning loop]: insights from this execution become context for future ones. And the async/await pattern enables concurrent tool execution, dramatically improving throughput for I/O-bound operations.
+
+This pattern is the foundation for production-grade agents. Frameworks like LangGraph, AutoGPT, and OpenAI's Assistants API implement variations of this state-machine approach, adding their own conventions for tool definitions, memory management, and error handling.
+
 ## [Multi-Agent] Systems
 
+When tasks grow complex enough, a single agent becomes unwieldy. Its prompt becomes bloated with instructions for different capabilities, its memory overflows with unrelated context, and its decision-making slows under the weight of options. [Multi-agent systems] solve this by distributing work across specialized agents, each with focused responsibilities and optimized prompts.
+
+The key architectural decision in multi-agent systems is the [communication topology]. In hierarchical systems, an orchestrator delegates to specialists and aggregates results. In collaborative systems, peers communicate directly to solve shared problems. In competitive systems, agents debate or critique each other's outputs. Each topology suits different problem types, and production systems often combine multiple patterns.
+
 ### Agent Communication Protocol
+
+Before agents can collaborate, they need a shared language for communication. The [message passing] pattern below defines a simple protocol: messages have a sender, receiver, content, and type (request, response, or broadcast). An AgentBus routes messages between agents, enabling loose coupling—agents don't need to know each other's implementation details, only how to send and receive messages.
 
 \`\`\`python
 from dataclasses import dataclass
@@ -1048,7 +1152,13 @@ class BaseAgent:
         ))
 \`\`\`
 
+This message bus pattern enables [asynchronous coordination]. Agents can fire off requests and continue working while waiting for responses. The bus queues messages and delivers them when agents are ready, handling backpressure and preventing overwhelming slow agents. This is essential for production systems where agents have different latencies and capacities.
+
+The BaseAgent class provides a foundation for all agents in the system. Notice how agents self-register with the bus on creation—this enables [dynamic agent discovery]. New agents can join the system at runtime, and other agents can discover them through the bus. This supports scaling: you might spin up additional specialist agents during high load and shut them down when idle.
+
 ### Hierarchical Multi-Agent System
+
+The [hierarchical pattern] is the most common multi-agent architecture. An orchestrator agent receives high-level goals, decomposes them into subtasks, delegates each subtask to an appropriate specialist, and synthesizes the results into a final answer. This mirrors how human organizations work: executives set strategy, managers delegate to specialists, and results flow back up the chain.
 
 \`\`\`python
 class OrchestratorAgentMA(BaseAgent):
@@ -1149,9 +1259,19 @@ Solve this task using your expertise.
             )
 \`\`\`
 
+This implementation shows several key patterns. The orchestrator uses [correlation IDs] to track which specialist response corresponds to which request—essential when multiple tasks are in flight simultaneously. The \`asyncio.wait_for\` with timeout ensures the system doesn't hang if a specialist fails to respond. And the synthesis step uses the LLM to combine potentially conflicting or complementary specialist outputs into a coherent answer.
+
+The specialist agents demonstrate [expertise encapsulation]. Each specialist has a focused prompt that emphasizes its domain expertise and a curated set of tools relevant to its specialty. This focused context helps the LLM perform better than a generalist prompt trying to cover everything. In practice, you might have specialists for "web research," "code generation," "data analysis," and "writing"—each optimized for its domain.
+
 ## Self-Reflection and Learning
 
+The agents we've built so far don't learn from their mistakes. They might fail repeatedly on similar tasks, never recognizing patterns in what goes wrong. [Self-reflection] addresses this by having agents explicitly analyze their failures, generate insights, and apply those insights to future attempts. This creates a form of [in-context learning] that persists across interactions.
+
+The key research in this area is the [Reflexion] pattern (Shinn et al., 2023), which showed that agents with self-reflection capabilities significantly outperform those without on tasks requiring multi-step reasoning. The insight is that LLMs are good at post-hoc analysis—they can explain why something went wrong even when they couldn't avoid the mistake initially.
+
 ### Reflexion Pattern
+
+The Reflexion pattern implements a retry loop with reflection. After each failed attempt, the agent generates a reflection analyzing what went wrong and how to improve. These reflections accumulate and are injected into subsequent attempts, giving the agent a "memory" of past failures. Additionally, reflections are stored in semantic memory, so even across sessions, the agent can retrieve relevant lessons learned from similar past tasks.
 
 \`\`\`python
 class ReflexionAgent:
@@ -1231,9 +1351,17 @@ Reflection:
         return await self.llm.generate(prompt)
 \`\`\`
 
+The \`_reflect\` method is the heart of this pattern. It asks the model to be specific about three things: what mistake was made, why it happened, and how to avoid it next time. This structured reflection produces more useful insights than vague "try harder" guidance. The insights then flow into both the current attempt loop (via \`self.reflections\`) and long-term memory (via \`self.memory.store\`), creating both immediate and persistent learning.
+
+One subtlety is the [task categorization] in the memory metadata. By storing reflections with a task type, we can retrieve reflections from similar tasks even when the specific goal differs. An agent that learned "always validate API keys before making requests" on one task can apply that insight to a completely different task involving API calls. This generalization is what makes self-reflection powerful.
+
 ## Production Considerations
 
+Deploying agents to production introduces challenges beyond algorithmic correctness. Real users expect reliability, reasonable latency, and graceful handling of edge cases. Systems administrators need observability into what agents are doing. Security teams need assurance that agents won't take harmful actions. This section covers the production engineering patterns that bridge the gap from prototype to production.
+
 ### Observability
+
+You cannot improve what you cannot measure. [Distributed tracing] follows requests through the agent system, recording timing, decisions, and outcomes at each step. [Structured logging] captures rich context that enables debugging without the noise of unstructured logs. [Metrics] track aggregate behavior: success rates, latencies, tool usage patterns. Together, these enable you to answer questions like "why did this request take 30 seconds?" or "which tool is failing most often?"
 
 \`\`\`python
 import structlog
@@ -1299,7 +1427,15 @@ class ObservableAgent:
                 )
 \`\`\`
 
+This implementation uses [OpenTelemetry] for distributed tracing, which has become the industry standard for observability. Each agent run creates a span that captures the task, timing, and outcome. The span attributes enable filtering and analysis: "show me all failed runs" or "find runs involving the search tool." The \`record_exception\` call captures full stack traces for debugging.
+
+The metrics dictionary implements [exponential moving averages] for latency tracking, which smooths out outliers while remaining responsive to trends. In production, you'd export these metrics to a system like Prometheus or DataDog and set up alerts for anomalies: high error rates, increasing latencies, or unexpected tool usage patterns.
+
 ### Rate Limiting and Backpressure
+
+LLM APIs have rate limits. External tools have rate limits. Your own system has capacity limits. [Rate limiting] ensures the agent system operates within these constraints, preventing failures due to limit exhaustion. [Backpressure] prevents the system from accepting more work than it can handle, queuing excess requests or rejecting them gracefully.
+
+The implementation below uses two mechanisms: a semaphore limits concurrent requests (backpressure), and a sliding window tracks recent request times to enforce a rate limit. This combination prevents both overwhelming the system with concurrent requests and exceeding API rate limits with rapid sequential requests.
 
 \`\`\`python
 import asyncio
@@ -1330,6 +1466,10 @@ class RateLimitedAgent:
             if elapsed < 1.0:
                 await asyncio.sleep(1.0 - elapsed)
 \`\`\`
+
+Beyond rate limiting, production systems need [circuit breakers] that stop calling failing dependencies, [retry policies] with exponential backoff for transient failures, [timeout handling] that prevents hung requests from consuming resources, and [graceful degradation] that provides partial functionality when full capability is unavailable. These patterns come from distributed systems engineering and are essential for reliable agent deployments.
+
+One final production consideration is [agent safety]. Agents with tool access can potentially take harmful actions—deleting data, sending unauthorized communications, or accessing restricted resources. Production systems implement [guardrails]: tool invocations might require human approval for sensitive operations, output filters might block harmful content, and [sandboxing] might limit what the agent can access. The field of [AI safety] is evolving rapidly, but the core principle is defense in depth: no single failure should lead to catastrophic outcomes.
 
 ## Congratulations!
 
