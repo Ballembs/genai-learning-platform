@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import {
   ChevronLeft,
@@ -23,6 +24,29 @@ import { Sidebar } from '@/components/lesson/Sidebar';
 import { BottomSheet, BottomSheetTrigger } from '@/components/ui/BottomSheet';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { lessonData } from '@/content/lessons';
+
+// Dynamic imports for interactive demos (only loaded when needed)
+const PromptPlayground = dynamic(
+  () => import('@/components/try-it/PromptPlayground').then(m => ({ default: m.PromptPlayground })),
+  {
+    loading: () => <div className="h-96 bg-gray-50 rounded-2xl animate-pulse" />,
+    ssr: false,
+  }
+);
+
+const SimilarityChecker = dynamic(
+  () => import('@/components/try-it/SimilarityChecker').then(m => ({ default: m.SimilarityChecker })),
+  {
+    loading: () => <div className="h-96 bg-gray-50 rounded-2xl animate-pulse" />,
+    ssr: false,
+  }
+);
+
+// Map lesson slugs to their interactive demos
+const lessonDemos: Record<string, React.ComponentType | null> = {
+  '02-prompt-engineering': PromptPlayground,
+  '03-embeddings': SimilarityChecker,
+};
 
 export default function LessonPage() {
   const params = useParams();
@@ -181,6 +205,22 @@ export default function LessonPage() {
                   terms={lesson.terms}
                 />
               </div>
+
+              {/* Try It Yourself Demo */}
+              {lessonDemos[lessonSlug] && (() => {
+                const DemoComponent = lessonDemos[lessonSlug]!;
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5 }}
+                    className="mt-6 sm:mt-8"
+                  >
+                    <DemoComponent />
+                  </motion.div>
+                );
+              })()}
 
               {/* Advanced Topics */}
               {lesson.advancedTopics && lesson.advancedTopics.length > 0 && (
