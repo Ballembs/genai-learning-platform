@@ -41,13 +41,9 @@ export function PromptPlayground() {
   const [error, setError] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>('chef');
 
-  const handlePresetClick = (preset: typeof presets[0]) => {
-    setSystemPrompt(preset.prompt);
-    setActivePreset(preset.id);
-  };
-
-  const handleSend = async () => {
-    if (!systemPrompt.trim() || !userMessage.trim()) return;
+  const handleSend = async (overrideSystemPrompt?: string) => {
+    const promptToUse = overrideSystemPrompt || systemPrompt;
+    if (!promptToUse.trim() || !userMessage.trim() || isLoading) return;
 
     setIsLoading(true);
     setError(null);
@@ -62,7 +58,7 @@ export function PromptPlayground() {
       const response = await fetch('/api/try-it/prompt-playground', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ systemPrompt, userMessage }),
+        body: JSON.stringify({ systemPrompt: promptToUse, userMessage: userMessage.trim() }),
       });
 
       const data = await response.json();
@@ -77,6 +73,12 @@ export function PromptPlayground() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePresetClick = (preset: typeof presets[0]) => {
+    setSystemPrompt(preset.prompt);
+    setActivePreset(preset.id);
+    handleSend(preset.prompt);
   };
 
   return (
@@ -153,7 +155,7 @@ export function PromptPlayground() {
             </div>
 
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={isLoading || !systemPrompt.trim() || !userMessage.trim()}
               className="mt-3 w-full px-4 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
@@ -235,7 +237,7 @@ export function PromptPlayground() {
           <p className="text-sm text-gray-600 flex items-start gap-2">
             <span className="text-lg">💡</span>
             <span>
-              Try changing the system prompt and sending the <strong>same message</strong> to see how the AI&apos;s personality changes!
+              Click different presets to instantly see how the <strong>same question</strong> gets completely different answers!
             </span>
           </p>
         </div>
