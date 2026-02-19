@@ -130,10 +130,42 @@ export const useUserStore = create<UserStore>()(
       }),
       
       updateLessonProgress: (lessonId, progress) => set((state) => {
-        if (!state.profile) return state;
-        
+        const newProgress = {
+          lessonId,
+          percentComplete: 0,
+          sectionsCompleted: [],
+          lastAccessedAt: new Date(),
+          timeSpentMinutes: 0,
+          ...progress,
+        };
+
+        // Create temporary profile for non-authenticated users
+        if (!state.profile) {
+          return {
+            profile: {
+              user: {
+                id: 'guest',
+                level: state.currentLevel,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+              explorations: [],
+              lessonProgress: [newProgress],
+              chatSessions: [],
+              stats: {
+                termsExplored: 0,
+                deepDivesCompleted: 0,
+                quizzesPassed: 0,
+                totalTimeMinutes: 0,
+                currentStreak: 0,
+                longestStreak: 0,
+              },
+            },
+          };
+        }
+
         const existing = state.profile.lessonProgress.find(p => p.lessonId === lessonId);
-        
+
         if (existing) {
           return {
             profile: {
@@ -144,20 +176,13 @@ export const useUserStore = create<UserStore>()(
             },
           };
         }
-        
+
         return {
           profile: {
             ...state.profile,
             lessonProgress: [
               ...state.profile.lessonProgress,
-              {
-                lessonId,
-                percentComplete: 0,
-                sectionsCompleted: [],
-                lastAccessedAt: new Date(),
-                timeSpentMinutes: 0,
-                ...progress,
-              },
+              newProgress,
             ],
           },
         };
