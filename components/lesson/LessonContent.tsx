@@ -10,9 +10,10 @@ import type { Term } from '@/types';
 interface LessonContentProps {
   content: string;
   terms: Term[];
+  highlightIndex?: number; // index of currently-read audio segment
 }
 
-export function LessonContent({ content, terms }: LessonContentProps) {
+export function LessonContent({ content, terms, highlightIndex = -1 }: LessonContentProps) {
   // Create a map of term keywords to term data
   const termsMap = new Map<string, Term>();
   terms.forEach(term => {
@@ -21,6 +22,13 @@ export function LessonContent({ content, terms }: LessonContentProps) {
     // Also add the slug as a key
     termsMap.set(term.slug, term);
   });
+
+  // Global block counter for audio indexing (reset each render)
+  let audioIndex = 0;
+
+  // Helper to add highlight class when audio is reading this block
+  const highlightClass = (idx: number) =>
+    idx === highlightIndex ? 'audio-highlight' : '';
 
   // Parse the content and render
   const renderContent = () => {
@@ -35,11 +43,14 @@ export function LessonContent({ content, terms }: LessonContentProps) {
         const [fullMatch, diagramCode] = diagramMatch;
         const beforeDiagram = section.slice(0, section.indexOf(fullMatch));
         const afterDiagram = section.slice(section.indexOf(fullMatch) + fullMatch.length);
-        
+        const diagramIdx = audioIndex++;
+
         return (
           <React.Fragment key={sectionIndex}>
             {beforeDiagram && renderTextContent(beforeDiagram, sectionIndex + '-before')}
-            <MermaidDiagram chart={diagramCode.trim()} />
+            <div data-audio-index={diagramIdx} className={highlightClass(diagramIdx)}>
+              <MermaidDiagram chart={diagramCode.trim()} />
+            </div>
             {afterDiagram && renderTextContent(afterDiagram, sectionIndex + '-after')}
           </React.Fragment>
         );
@@ -71,29 +82,33 @@ export function LessonContent({ content, terms }: LessonContentProps) {
             const codeBlockIndex = parseInt(codeBlockMatch[1], 10);
             const codeBlock = codeBlocks[codeBlockIndex];
             if (codeBlock) {
+              const idx = audioIndex++;
               return (
-                <HighlightedCode
-                  key={blockIndex}
-                  code={codeBlock.code}
-                  language={codeBlock.language}
-                  className="my-6"
-                />
+                <div key={blockIndex} data-audio-index={idx} className={highlightClass(idx)}>
+                  <HighlightedCode
+                    code={codeBlock.code}
+                    language={codeBlock.language}
+                    className="my-6"
+                  />
+                </div>
               );
             }
           }
 
           // Check for headers
           if (block.startsWith('## ')) {
+            const idx = audioIndex++;
             return (
-              <h2 key={blockIndex} className="text-2xl font-bold text-gray-900 mt-10 mb-4 pb-2 border-b border-gray-200">
+              <h2 key={blockIndex} data-audio-index={idx} className={`text-2xl font-bold text-gray-900 mt-10 mb-4 pb-2 border-b border-gray-200 ${highlightClass(idx)}`}>
                 {parseInlineContent(block.slice(3), termsMap)}
               </h2>
             );
           }
 
           if (block.startsWith('### ')) {
+            const idx = audioIndex++;
             return (
-              <h3 key={blockIndex} className="text-xl font-semibold text-gray-800 mt-8 mb-3">
+              <h3 key={blockIndex} data-audio-index={idx} className={`text-xl font-semibold text-gray-800 mt-8 mb-3 ${highlightClass(idx)}`}>
                 {parseInlineContent(block.slice(4), termsMap)}
               </h3>
             );
@@ -109,31 +124,35 @@ export function LessonContent({ content, terms }: LessonContentProps) {
               ? lines.slice(1, -1).join('\n')
               : lines.slice(1).join('\n');
 
+            const idx = audioIndex++;
             return (
-              <HighlightedCode
-                key={blockIndex}
-                code={code}
-                language={language}
-                className="my-6"
-              />
+              <div key={blockIndex} data-audio-index={idx} className={highlightClass(idx)}>
+                <HighlightedCode
+                  code={code}
+                  language={language}
+                  className="my-6"
+                />
+              </div>
             );
           }
 
           // Check for blockquotes
           if (block.startsWith('> ')) {
             const quoteContent = block.split('\n').map(line => line.slice(2)).join('\n');
+            const idx = audioIndex++;
             return (
-              <blockquote key={blockIndex} className="border-l-4 border-primary-400 bg-primary-50 pl-4 py-3 pr-4 my-6 rounded-r-lg">
+              <blockquote key={blockIndex} data-audio-index={idx} className={`border-l-4 border-primary-400 bg-primary-50 pl-4 py-3 pr-4 my-6 rounded-r-lg ${highlightClass(idx)}`}>
                 {parseInlineContent(quoteContent, termsMap)}
               </blockquote>
             );
           }
-          
+
           // Check for unordered lists
           if (block.match(/^[\-\*] /m)) {
             const items = block.split(/\n/).filter(line => line.match(/^[\-\*] /));
+            const idx = audioIndex++;
             return (
-              <ul key={blockIndex} className="my-4 pl-6 space-y-2">
+              <ul key={blockIndex} data-audio-index={idx} className={`my-4 pl-6 space-y-2 ${highlightClass(idx)}`}>
                 {items.map((item, i) => (
                   <li key={i} className="text-gray-700">
                     {parseInlineContent(item.slice(2), termsMap)}
@@ -142,12 +161,13 @@ export function LessonContent({ content, terms }: LessonContentProps) {
               </ul>
             );
           }
-          
+
           // Check for ordered lists
           if (block.match(/^\d+\. /m)) {
             const items = block.split(/\n/).filter(line => line.match(/^\d+\. /));
+            const idx = audioIndex++;
             return (
-              <ol key={blockIndex} className="my-4 pl-6 space-y-2 list-decimal">
+              <ol key={blockIndex} data-audio-index={idx} className={`my-4 pl-6 space-y-2 list-decimal ${highlightClass(idx)}`}>
                 {items.map((item, i) => (
                   <li key={i} className="text-gray-700">
                     {parseInlineContent(item.replace(/^\d+\. /, ''), termsMap)}
@@ -156,36 +176,38 @@ export function LessonContent({ content, terms }: LessonContentProps) {
               </ol>
             );
           }
-          
+
           // Check for tables
           if (block.includes('|')) {
-            return renderTable(block, blockIndex);
+            const idx = audioIndex++;
+            return renderTable(block, blockIndex, idx);
           }
-          
+
           // Default to paragraph
           if (block.trim()) {
+            const idx = audioIndex++;
             return (
-              <p key={blockIndex} className="text-gray-700 leading-relaxed mb-4">
+              <p key={blockIndex} data-audio-index={idx} className={`text-gray-700 leading-relaxed mb-4 ${highlightClass(idx)}`}>
                 {parseInlineContent(block, termsMap)}
               </p>
             );
           }
-          
+
           return null;
         })}
       </div>
     );
   };
 
-  const renderTable = (block: string, key: number) => {
+  const renderTable = (block: string, key: number, idx: number) => {
     const rows = block.split('\n').filter(row => row.trim());
     const headers = rows[0].split('|').filter(cell => cell.trim()).map(cell => cell.trim());
-    const dataRows = rows.slice(2).map(row => 
+    const dataRows = rows.slice(2).map(row =>
       row.split('|').filter(cell => cell.trim()).map(cell => cell.trim())
     );
 
     return (
-      <div key={key} className="my-6 overflow-x-auto">
+      <div key={key} data-audio-index={idx} className={`my-6 overflow-x-auto ${highlightClass(idx)}`}>
         <table className="w-full border-collapse">
           <thead>
             <tr>
