@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { AuthProvider } from '@/lib/auth';
 import { useUserStore, useChatStore } from '@/lib/store';
+import { usePersistToDb } from '@/hooks/usePersistToDb';
 
 /**
  * Cleans up any Mermaid error elements that may have been
@@ -43,6 +44,15 @@ function MermaidCleanup() {
 }
 
 /**
+ * Syncs Zustand store changes to Supabase for authenticated users.
+ * This runs globally and automatically persists explorations and progress.
+ */
+function DbSyncProvider({ children }: { children: React.ReactNode }) {
+  usePersistToDb();
+  return <>{children}</>;
+}
+
+/**
  * Handles Zustand store rehydration on client mount.
  * This ensures persisted state is loaded from localStorage
  * only after the initial render to avoid hydration mismatches.
@@ -73,7 +83,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <AuthProvider>
       <StoreHydration />
       <MermaidCleanup />
-      {children}
+      <DbSyncProvider>
+        {children}
+      </DbSyncProvider>
     </AuthProvider>
   );
 }

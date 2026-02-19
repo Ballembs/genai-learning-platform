@@ -18,6 +18,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useUserStore, useNavigationStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth';
 import { LessonContent } from '@/components/lesson/LessonContent';
 import { LessonQuiz } from '@/components/lesson/LessonQuiz';
 import { Sidebar } from '@/components/lesson/Sidebar';
@@ -55,6 +56,7 @@ export default function LessonPage() {
   
   const { currentLevel, hasExplored } = useUserStore();
   const { setCurrentLesson, setBreadcrumbs } = useNavigationStore();
+  const { user } = useAuth();
 
   const [scrollProgress, setScrollProgress] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -152,6 +154,25 @@ export default function LessonPage() {
               <div className="text-xs sm:text-sm text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
                 {scrollProgress}%
               </div>
+              {user ? (
+                <Link
+                  href="/profile"
+                  className="hover:opacity-80 transition-opacity hidden sm:block"
+                >
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center">
+                    <span className="text-white text-xs font-medium">
+                      {user.email?.charAt(0).toUpperCase() || 'U'}
+                    </span>
+                  </div>
+                </Link>
+              ) : (
+                <Link
+                  href="/auth/signin"
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hidden sm:block"
+                >
+                  Sign In
+                </Link>
+              )}
             </div>
           </div>
         </div>

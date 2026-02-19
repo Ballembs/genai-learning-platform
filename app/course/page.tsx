@@ -21,6 +21,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { useUserStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth';
 import type { UserLevel } from '@/types';
 
 // Course lessons data
@@ -131,6 +132,7 @@ const levelLabels: Record<UserLevel, { label: string; color: string }> = {
 
 export default function CoursePage() {
   const { currentLevel, setLevel, profile } = useUserStore();
+  const { user, isConfigured } = useAuth();
   const [showLevelSelector, setShowLevelSelector] = useState(false);
 
   // Get progress for each lesson
@@ -192,12 +194,25 @@ export default function CoursePage() {
                 )}
               </div>
 
-              <Link
-                href="/profile"
-                className="p-2.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 rounded-lg transition-colors touch-target"
-              >
-                <User className="w-5 h-5 text-gray-600" />
-              </Link>
+              {user ? (
+                <Link
+                  href="/profile"
+                  className="hover:opacity-80 transition-opacity touch-target"
+                >
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center">
+                    <span className="text-white text-sm font-medium">
+                      {user.email?.charAt(0).toUpperCase() || 'U'}
+                    </span>
+                  </div>
+                </Link>
+              ) : (
+                <Link
+                  href="/auth/signin"
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors touch-target"
+                >
+                  Sign In
+                </Link>
+              )}
             </div>
           </div>
         </div>

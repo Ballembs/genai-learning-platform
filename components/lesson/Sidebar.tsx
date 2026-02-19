@@ -12,6 +12,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { useUserStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth';
 import type { Term } from '@/types';
 
 interface SidebarProps {
@@ -21,6 +22,7 @@ interface SidebarProps {
 
 export function Sidebar({ lessonId, terms }: SidebarProps) {
   const { profile, hasExplored, getExploration } = useUserStore();
+  const { user } = useAuth();
 
   // Get explorations for this lesson
   const lessonExplorations = profile?.explorations.filter(
@@ -228,6 +230,26 @@ export function Sidebar({ lessonId, terms }: SidebarProps) {
           The AI knows exactly what lesson you're on!
         </p>
       </motion.div>
+
+      {/* Sign-in prompt for guests */}
+      {!user && (
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4, delay: 0.4 }}
+          className="bg-gradient-to-br from-cyan-50 to-purple-50 rounded-xl border border-cyan-100 p-4"
+        >
+          <p className="text-sm text-gray-700 mb-2">
+            Sign in to save your progress across devices
+          </p>
+          <Link
+            href="/auth/signin"
+            className="text-sm font-medium text-cyan-600 hover:text-cyan-700 transition-colors"
+          >
+            Sign in →
+          </Link>
+        </motion.div>
+      )}
     </div>
   );
 }

@@ -55,6 +55,9 @@ const lessonNames: Record<string, string> = {
   'lesson-03': 'Embeddings',
   'lesson-04': 'RAG',
   'lesson-05': 'Agents',
+  'lesson-06': 'Agentic AI Patterns',
+  'lesson-07': 'Agentic AI in Practice',
+  'lesson-08': 'MCP Protocol',
 };
 
 const lessonSlugs: Record<string, string> = {
@@ -63,6 +66,9 @@ const lessonSlugs: Record<string, string> = {
   'lesson-03': '03-embeddings',
   'lesson-04': '04-rag',
   'lesson-05': '05-agents',
+  'lesson-06': '06-agentic-patterns',
+  'lesson-07': '07-agentic-practice',
+  'lesson-08': '08-mcp',
 };
 
 type TabType = 'overview' | 'explorations' | 'chat' | 'settings';
@@ -269,6 +275,50 @@ export default function ProfilePage() {
       minute: '2-digit',
     });
   };
+
+  // Show sign-in prompt for unauthenticated users when Supabase is configured
+  // If Supabase is NOT configured, show profile with localStorage data
+  if (isConfigured && !user && !authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full text-center"
+        >
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center">
+            <User className="w-10 h-10 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-3">
+            Sign in to view your profile
+          </h1>
+          <p className="text-slate-400 mb-8">
+            Your learning progress, explorations, and quiz results will be saved here.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              href="/auth/signin"
+              className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/auth/signup"
+              className="px-6 py-3 bg-slate-800 text-white rounded-xl font-medium hover:bg-slate-700 transition-colors border border-slate-700"
+            >
+              Create Account
+            </Link>
+          </div>
+          <Link
+            href="/course"
+            className="inline-block mt-6 text-slate-500 hover:text-slate-300 transition-colors text-sm"
+          >
+            Continue as Guest →
+          </Link>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950">
