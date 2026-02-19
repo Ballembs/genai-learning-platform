@@ -7,6 +7,17 @@ import { useUserStore } from '@/lib/store';
 import { saveExploration, updateLessonProgress } from '@/lib/db/supabase';
 
 /**
+ * Safely convert a date value to ISO string.
+ * Handles both Date objects and already-stringified dates from localStorage.
+ */
+function toISOStringSafe(date: Date | string | null | undefined): string | undefined {
+  if (!date) return undefined;
+  if (typeof date === 'string') return date;
+  if (date instanceof Date) return date.toISOString();
+  return undefined;
+}
+
+/**
  * Hook that syncs Zustand store changes to Supabase for authenticated users.
  * Place this in app/providers.tsx so it runs globally.
  *
@@ -28,13 +39,13 @@ export function usePersistToDb() {
       const explorations = state.profile?.explorations || [];
       const prevExplorations = prevState.profile?.explorations || [];
 
-      // Serialize for comparison
+      // Serialize for comparison (use safe helper for dates from localStorage)
       const explorationsKey = JSON.stringify(explorations.map(e => ({
         id: e.id,
         termId: e.termId,
-        popupViewedAt: e.popupViewedAt?.toISOString(),
-        deepDiveViewedAt: e.deepDiveViewedAt?.toISOString(),
-        masteryViewedAt: e.masteryViewedAt?.toISOString(),
+        popupViewedAt: toISOStringSafe(e.popupViewedAt),
+        deepDiveViewedAt: toISOStringSafe(e.deepDiveViewedAt),
+        masteryViewedAt: toISOStringSafe(e.masteryViewedAt),
         quizScore: e.quizScore,
       })));
 
@@ -55,9 +66,9 @@ export function usePersistToDb() {
           const prev = prevExplorations.find(p => p.termId === exp.termId);
           if (prev) {
             const hasChanged =
-              prev.popupViewedAt?.toISOString() !== exp.popupViewedAt?.toISOString() ||
-              prev.deepDiveViewedAt?.toISOString() !== exp.deepDiveViewedAt?.toISOString() ||
-              prev.masteryViewedAt?.toISOString() !== exp.masteryViewedAt?.toISOString() ||
+              toISOStringSafe(prev.popupViewedAt) !== toISOStringSafe(exp.popupViewedAt) ||
+              toISOStringSafe(prev.deepDiveViewedAt) !== toISOStringSafe(exp.deepDiveViewedAt) ||
+              toISOStringSafe(prev.masteryViewedAt) !== toISOStringSafe(exp.masteryViewedAt) ||
               prev.quizScore !== exp.quizScore;
 
             if (hasChanged) {

@@ -31,20 +31,17 @@ export function createClient(): SupabaseClient | null {
 }
 
 /**
- * Direct Supabase client using Publishable key
+ * Direct Supabase client getter using Publishable key
  * Use this for simple client-side operations
  * REQUIRES Row Level Security (RLS) policies to be enabled
+ * Uses the same singleton as createClient() to avoid multiple GoTrueClient instances
  */
-export const supabase = (() => {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+export function getSupabase(): SupabaseClient | null {
+  return createClient();
+}
 
-  if (!supabaseUrl || !supabasePublishableKey) {
-    return null;
-  }
-
-  return createSupabaseClient(supabaseUrl, supabasePublishableKey);
-})();
+// Legacy export for backwards compatibility - use getSupabase() instead
+export const supabase = null; // Deprecated: use createClient() or getSupabase()
 
 /**
  * Check if Supabase is configured
