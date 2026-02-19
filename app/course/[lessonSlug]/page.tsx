@@ -1,7 +1,7 @@
 // app/course/[lessonSlug]/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -59,6 +59,7 @@ export default function LessonPage() {
   const { user } = useAuth();
 
   const [scrollProgress, setScrollProgress] = useState(0);
+  const scrollProgressRef = useRef(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isMobile = useIsMobile();
 
@@ -80,65 +81,64 @@ export default function LessonPage() {
     };
   }, [lesson, lessonSlug, setCurrentLesson, setBreadcrumbs]);
 
-  // Track scroll progress
+  // Track scroll progress - updates both state (for UI) and ref (for saving)
   useEffect(() => {
     const handleScroll = () => {
       const scrollTop = window.scrollY;
       const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const progress = Math.min(100, Math.round((scrollTop / docHeight) * 100));
+      const progress = docHeight > 0 ? Math.min(100, Math.round((scrollTop / docHeight) * 100)) : 0;
       setScrollProgress(progress);
+      scrollProgressRef.current = progress;
     };
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Save lesson progress when leaving or periodically
+  // Save lesson progress - uses ref to avoid stale closures
   useEffect(() => {
     if (!lesson) return;
     const startTime = Date.now();
-    let currentProgress = scrollProgress;
 
     // Record lesson access immediately
     updateLessonProgress(lesson.id, {
       lastAccessedAt: new Date(),
     });
 
-    // Update current progress on scroll
-    const handleProgressUpdate = () => {
-      currentProgress = scrollProgress;
-    };
-
-    // Save progress periodically (every 30 seconds)
+    // Save progress periodically (every 10 seconds)
     const interval = setInterval(() => {
-      const minutesSpent = Math.round((Date.now() - startTime) / 60000);
+      const minutesSpent = Math.max(1, Math.round((Date.now() - startTime) / 60000));
       updateLessonProgress(lesson.id, {
-        percentComplete: currentProgress,
+        percentComplete: scrollProgressRef.current, // Use ref, not stale closure
         lastAccessedAt: new Date(),
         timeSpentMinutes: minutesSpent,
       });
-    }, 30000);
+    }, 10000);
 
-    // Save on unmount (page leave)
-    return () => {
-      clearInterval(interval);
+    // Save on page leave (beforeunload)
+    const handleBeforeUnload = () => {
       const minutesSpent = Math.max(1, Math.round((Date.now() - startTime) / 60000));
       updateLessonProgress(lesson.id, {
-        percentComplete: currentProgress,
+        percentComplete: scrollProgressRef.current,
+        lastAccessedAt: new Date(),
+        timeSpentMinutes: minutesSpent,
+      });
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Cleanup
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Also save on unmount (internal navigation)
+      const minutesSpent = Math.max(1, Math.round((Date.now() - startTime) / 60000));
+      updateLessonProgress(lesson.id, {
+        percentComplete: scrollProgressRef.current,
         lastAccessedAt: new Date(),
         timeSpentMinutes: minutesSpent,
       });
     };
   }, [lesson, updateLessonProgress]);
-
-  // Keep progress ref updated
-  useEffect(() => {
-    if (lesson) {
-      updateLessonProgress(lesson.id, {
-        percentComplete: scrollProgress,
-      });
-    }
-  }, [scrollProgress, lesson, updateLessonProgress]);
 
   if (!lesson) {
     return (
@@ -350,14 +350,21 @@ export default function LessonPage() {
                 )}
 
                 {nextLesson ? (
-                  <Link
-                    href={`/course/${nextLesson}`}
+                  <button
+                    onClick={() => {
+                      // Save 100% progress before navigating to next lesson
+                      updateLessonProgress(lesson.id, {
+                        percentComplete: 100,
+                        lastAccessedAt: new Date(),
+                      });
+                      router.push(`/course/${nextLesson}`);
+                    }}
                     className="flex items-center gap-1 sm:gap-2 px-4 sm:px-6 py-3 bg-primary-500 text-white rounded-xl hover:bg-primary-600 active:scale-[0.98] transition-all touch-target text-sm sm:text-base"
                   >
                     <span className="hidden sm:inline">Next Lesson</span>
                     <span className="sm:hidden">Next</span>
                     <ChevronRight className="w-5 h-5" />
-                  </Link>
+                  </button>
                 ) : (
                   <div className="px-4 sm:px-6 py-3 bg-green-500 text-white rounded-xl text-sm sm:text-base">
                     🎉 Complete!
