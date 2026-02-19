@@ -4,7 +4,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import {
   ChevronLeft,
@@ -18,36 +17,11 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useUserStore, useNavigationStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth';
 import { LessonContent } from '@/components/lesson/LessonContent';
-import { LessonQuiz } from '@/components/lesson/LessonQuiz';
 import { Sidebar } from '@/components/lesson/Sidebar';
 import { BottomSheet, BottomSheetTrigger } from '@/components/ui/BottomSheet';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { lessonData } from '@/content/lessons';
-
-// Dynamic imports for interactive demos (only loaded when needed)
-const PromptPlayground = dynamic(
-  () => import('@/components/try-it/PromptPlayground').then(m => ({ default: m.PromptPlayground })),
-  {
-    loading: () => <div className="h-96 bg-gray-50 rounded-2xl animate-pulse" />,
-    ssr: false,
-  }
-);
-
-const SimilarityChecker = dynamic(
-  () => import('@/components/try-it/SimilarityChecker').then(m => ({ default: m.SimilarityChecker })),
-  {
-    loading: () => <div className="h-96 bg-gray-50 rounded-2xl animate-pulse" />,
-    ssr: false,
-  }
-);
-
-// Map lesson slugs to their interactive demos
-const lessonDemos: Record<string, React.ComponentType | null> = {
-  '02-prompt-engineering': PromptPlayground,
-  '03-embeddings': SimilarityChecker,
-};
 
 export default function LessonPage() {
   const params = useParams();
@@ -56,12 +30,8 @@ export default function LessonPage() {
   
   const { currentLevel, hasExplored, updateLessonProgress } = useUserStore();
   const { setCurrentLesson, setBreadcrumbs } = useNavigationStore();
-  const { user } = useAuth();
 
   const [scrollProgress, setScrollProgress] = useState(0);
-  const scrollProgressRef = useRef(0);
-  const markedCompleteRef = useRef(false);
-  const lastSavedProgressRef = useRef(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isMobile = useIsMobile();
 
@@ -82,6 +52,10 @@ export default function LessonPage() {
       setCurrentLesson(null);
     };
   }, [lesson, lessonSlug, setCurrentLesson, setBreadcrumbs]);
+
+  const scrollProgressRef = useRef(0);
+  const markedCompleteRef = useRef(false);
+  const lastSavedProgressRef = useRef(0);
 
   // Track scroll progress
   useEffect(() => {
@@ -110,10 +84,10 @@ export default function LessonPage() {
     const saveProgress = () => {
       // Don't overwrite if explicitly marked complete
       if (markedCompleteRef.current) return;
-
+      
       const currentProgress = scrollProgressRef.current;
       const minutesSpent = Math.max(1, Math.round((Date.now() - startTime) / 60000));
-
+      
       // Only save if progress actually increased
       if (currentProgress > lastSavedProgressRef.current || lastSavedProgressRef.current === 0) {
         lastSavedProgressRef.current = currentProgress;
@@ -215,25 +189,6 @@ export default function LessonPage() {
               <div className="text-xs sm:text-sm text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
                 {scrollProgress}%
               </div>
-              {user ? (
-                <Link
-                  href="/profile"
-                  className="hover:opacity-80 transition-opacity hidden sm:block"
-                >
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center">
-                    <span className="text-white text-xs font-medium">
-                      {user.email?.charAt(0).toUpperCase() || 'U'}
-                    </span>
-                  </div>
-                </Link>
-              ) : (
-                <Link
-                  href="/auth/signin"
-                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hidden sm:block"
-                >
-                  Sign In
-                </Link>
-              )}
             </div>
           </div>
         </div>
@@ -288,22 +243,6 @@ export default function LessonPage() {
                 />
               </div>
 
-              {/* Try It Yourself Demo */}
-              {lessonDemos[lessonSlug] && (() => {
-                const DemoComponent = lessonDemos[lessonSlug]!;
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.5 }}
-                    className="mt-6 sm:mt-8"
-                  >
-                    <DemoComponent />
-                  </motion.div>
-                );
-              })()}
-
               {/* Advanced Topics */}
               {lesson.advancedTopics && lesson.advancedTopics.length > 0 && (
                 <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl sm:rounded-2xl border border-gray-200 p-5 sm:p-8 mt-6 sm:mt-8">
@@ -341,11 +280,6 @@ export default function LessonPage() {
                     ))}
                   </div>
                 </div>
-              )}
-
-              {/* Quiz */}
-              {lesson.quiz && lesson.quiz.questions.length > 0 && (
-                <LessonQuiz quiz={lesson.quiz} lessonId={lesson.id} />
               )}
 
               {/* Navigation */}

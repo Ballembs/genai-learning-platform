@@ -4,11 +4,9 @@
 // ============================================
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import { useEffect, useState } from 'react';
+import { persist } from 'zustand/middleware';
 import type {
   UserLevel,
-  UserGoal,
   UserProfile,
   Exploration,
   LessonProgress,
@@ -19,25 +17,6 @@ import type {
 } from '@/types';
 
 // ============================================
-// HYDRATION HELPER
-// ============================================
-
-/**
- * Hook to safely use persisted Zustand stores with SSR.
- * Returns the store value only after hydration is complete,
- * avoiding hydration mismatch errors.
- */
-export function useHydration() {
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
-
-  return hydrated;
-}
-
-// ============================================
 // USER STORE
 // ============================================
 
@@ -45,19 +24,16 @@ interface UserStore {
   // State
   profile: UserProfile | null;
   currentLevel: UserLevel;
-  currentGoal: UserGoal;
   isAuthenticated: boolean;
-
+  
   // Actions
   setLevel: (level: UserLevel) => void;
-  setGoal: (goal: UserGoal) => void;
   setProfile: (profile: UserProfile) => void;
   addExploration: (exploration: Exploration) => void;
   updateExploration: (termId: string, updates: Partial<Exploration>) => void;
   updateLessonProgress: (lessonId: string, progress: Partial<LessonProgress>) => void;
   getExploration: (termId: string) => Exploration | undefined;
   hasExplored: (termId: string) => boolean;
-  saveQuizScore: (termId: string, score: number) => void;
   logout: () => void;
 }
 
@@ -66,11 +42,9 @@ export const useUserStore = create<UserStore>()(
     (set, get) => ({
       profile: null,
       currentLevel: 'beginner',
-      currentGoal: 'curious',
       isAuthenticated: false,
-
+      
       setLevel: (level) => set({ currentLevel: level }),
-      setGoal: (goal) => set({ currentGoal: goal }),
       
       setProfile: (profile) => set({ profile, isAuthenticated: true }),
       
@@ -163,9 +137,9 @@ export const useUserStore = create<UserStore>()(
             },
           };
         }
-
+        
         const existing = state.profile.lessonProgress.find(p => p.lessonId === lessonId);
-
+        
         if (existing) {
           // Never decrease percentComplete — only update if new value is higher
           const mergedProgress = {
@@ -185,7 +159,7 @@ export const useUserStore = create<UserStore>()(
             },
           };
         }
-
+        
         return {
           profile: {
             ...state.profile,
@@ -206,95 +180,15 @@ export const useUserStore = create<UserStore>()(
         const state = get();
         return state.profile?.explorations.some(e => e.termId === termId) ?? false;
       },
-
-      saveQuizScore: (termId, score) => set((state) => {
-        if (!state.profile) {
-          // Create temporary profile for non-authenticated users
-          return {
-            profile: {
-              user: {
-                id: 'guest',
-                level: state.currentLevel,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-              explorations: [{
-                id: crypto.randomUUID(),
-                termId,
-                termName: termId,
-                fromLessonId: '',
-                fromContext: '',
-                quizScore: score,
-                quizAttempts: 1,
-              }],
-              lessonProgress: [],
-              chatSessions: [],
-              stats: {
-                termsExplored: 1,
-                deepDivesCompleted: 0,
-                quizzesPassed: score >= 70 ? 1 : 0,
-                totalTimeMinutes: 0,
-                currentStreak: 1,
-                longestStreak: 1,
-              },
-            },
-          };
-        }
-
-        const exploration = state.profile.explorations.find(e => e.termId === termId);
-        const previouslyPassed = exploration?.quizScore && exploration.quizScore >= 70;
-        const nowPassing = score >= 70;
-
-        // Check if exploration exists
-        const exists = state.profile.explorations.some(e => e.termId === termId);
-
-        let updatedExplorations = state.profile.explorations;
-        if (exists) {
-          updatedExplorations = state.profile.explorations.map(e =>
-            e.termId === termId
-              ? { ...e, quizScore: Math.max(score, e.quizScore || 0), quizAttempts: (e.quizAttempts || 0) + 1 }
-              : e
-          );
-        } else {
-          updatedExplorations = [
-            ...state.profile.explorations,
-            {
-              id: crypto.randomUUID(),
-              termId,
-              termName: termId,
-              fromLessonId: '',
-              fromContext: '',
-              quizScore: score,
-              quizAttempts: 1,
-            },
-          ];
-        }
-
-        return {
-          profile: {
-            ...state.profile,
-            explorations: updatedExplorations,
-            stats: {
-              ...state.profile.stats,
-              quizzesPassed: !previouslyPassed && nowPassing
-                ? state.profile.stats.quizzesPassed + 1
-                : state.profile.stats.quizzesPassed,
-            },
-          },
-        };
-      }),
-
+      
       logout: () => set({ profile: null, isAuthenticated: false }),
     }),
     {
       name: 'genai-learning-user',
-      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         profile: state.profile,
         currentLevel: state.currentLevel,
-        currentGoal: state.currentGoal,
       }),
-      skipHydration: true,
     }
   )
 );
@@ -461,11 +355,9 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'genai-learning-chat',
-      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         messages: state.messages.slice(-50),  // Keep last 50 messages
       }),
-      skipHydration: true,
     }
   )
 );
