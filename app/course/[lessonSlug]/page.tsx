@@ -54,7 +54,7 @@ export default function LessonPage() {
   const router = useRouter();
   const lessonSlug = params.lessonSlug as string;
   
-  const { currentLevel, hasExplored } = useUserStore();
+  const { currentLevel, hasExplored, updateLessonProgress } = useUserStore();
   const { setCurrentLesson, setBreadcrumbs } = useNavigationStore();
   const { user } = useAuth();
 
@@ -92,6 +92,53 @@ export default function LessonPage() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Save lesson progress when leaving or periodically
+  useEffect(() => {
+    if (!lesson) return;
+    const startTime = Date.now();
+    let currentProgress = scrollProgress;
+
+    // Record lesson access immediately
+    updateLessonProgress(lesson.id, {
+      lastAccessedAt: new Date(),
+    });
+
+    // Update current progress on scroll
+    const handleProgressUpdate = () => {
+      currentProgress = scrollProgress;
+    };
+
+    // Save progress periodically (every 30 seconds)
+    const interval = setInterval(() => {
+      const minutesSpent = Math.round((Date.now() - startTime) / 60000);
+      updateLessonProgress(lesson.id, {
+        percentComplete: currentProgress,
+        lastAccessedAt: new Date(),
+        timeSpentMinutes: minutesSpent,
+      });
+    }, 30000);
+
+    // Save on unmount (page leave)
+    return () => {
+      clearInterval(interval);
+      const minutesSpent = Math.max(1, Math.round((Date.now() - startTime) / 60000));
+      updateLessonProgress(lesson.id, {
+        percentComplete: currentProgress,
+        lastAccessedAt: new Date(),
+        timeSpentMinutes: minutesSpent,
+      });
+    };
+  }, [lesson, updateLessonProgress]);
+
+  // Keep progress ref updated
+  useEffect(() => {
+    if (lesson) {
+      updateLessonProgress(lesson.id, {
+        percentComplete: scrollProgress,
+      });
+    }
+  }, [scrollProgress, lesson, updateLessonProgress]);
 
   if (!lesson) {
     return (

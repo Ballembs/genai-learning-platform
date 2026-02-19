@@ -71,6 +71,17 @@ const lessonSlugs: Record<string, string> = {
   'lesson-08': '08-mcp',
 };
 
+const lessonAbbreviations: Record<string, string> = {
+  'lesson-01': 'AI',
+  'lesson-02': 'PE',
+  'lesson-03': 'Em',
+  'lesson-04': 'RA',
+  'lesson-05': 'Ag',
+  'lesson-06': 'AP',
+  'lesson-07': 'Pr',
+  'lesson-08': 'MC',
+};
+
 type TabType = 'overview' | 'explorations' | 'chat' | 'settings';
 
 // ============================================
@@ -513,24 +524,68 @@ export default function ProfilePage() {
                   )}
                 </div>
 
-                {/* Knowledge Graph */}
+                {/* Knowledge Map */}
                 <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
                   <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                     <Network className="w-5 h-5 text-purple-400" />
                     Knowledge Map
                   </h2>
-                  <KnowledgeGraph
-                    nodes={knowledgeGraphData.nodes}
-                    edges={knowledgeGraphData.edges}
-                    height={280}
-                    onNodeClick={(id, type) => {
-                      if (type === 'lesson') {
-                        router.push(`/course/${lessonSlugs[id] || id}`);
-                      } else {
-                        router.push(`/course/term/${id}`);
-                      }
-                    }}
-                  />
+                  {Object.keys(explorationsByLesson).length > 0 ? (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {/* Lesson hubs with their explored terms */}
+                      {Object.entries(explorationsByLesson).map(([lessonId, exps]) => {
+                        if (lessonId === 'other') return null;
+                        return (
+                          <motion.div
+                            key={lessonId}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="flex items-start gap-3"
+                          >
+                            {/* Lesson node */}
+                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
+                              <span className="text-xs font-bold text-cyan-400">
+                                {lessonAbbreviations[lessonId] || lessonId.slice(-2)}
+                              </span>
+                            </div>
+                            {/* Term nodes */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-slate-400 mb-1.5 truncate">
+                                {lessonNames[lessonId] || lessonId}
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {exps.slice(0, 10).map((exp) => (
+                                  <span
+                                    key={exp.termId}
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs cursor-pointer hover:opacity-80 ${
+                                      exp.deepDiveViewedAt
+                                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                        : 'bg-slate-700/50 text-slate-400 border border-slate-600/30'
+                                    }`}
+                                    title={exp.deepDiveViewedAt ? 'Deep dive completed' : 'Popup viewed'}
+                                    onClick={() => router.push(`/course/term/${exp.termId}`)}
+                                  >
+                                    {exp.termName}
+                                    {exp.deepDiveViewedAt && (
+                                      <CheckCircle className="w-3 h-3 ml-1 text-purple-400" />
+                                    )}
+                                  </span>
+                                ))}
+                                {exps.length > 10 && (
+                                  <span className="text-xs text-slate-500">+{exps.length - 10} more</span>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-slate-500 text-sm">
+                      <Network className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                      <p>Explore terms to build your knowledge map</p>
+                    </div>
+                  )}
                 </div>
               </div>
 

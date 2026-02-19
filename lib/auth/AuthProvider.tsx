@@ -3,11 +3,12 @@
 // lib/auth/AuthProvider.tsx
 // Authentication context provider using Supabase Auth
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { createClient, isSupabaseConfigured } from '@/lib/db/supabase-client';
 import { useUserStore } from '@/lib/store';
-import { syncLocalDataToDatabase, loadUserDataFromDatabase } from '@/lib/auth/sync';
+import { syncLocalDataToDatabase, loadUserDataFromDatabase, mergeExplorations, mergeLessonProgress } from '@/lib/auth/sync';
+import type { UserProfile } from '@/types';
 
 // ============================================
 // TYPES
@@ -42,6 +43,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isConfigured = isSupabaseConfigured();
 
   const { setProfile, profile, currentLevel, logout: storeLogout } = useUserStore();
+  const profileRef = useRef(profile);
+
+  // Keep ref in sync so the auth callback always sees current local data
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  /**
+   * Merge database data with local Zustand data instead of overwriting.
+   * This prevents losing explorations/progress saved in localStorage.
+   */
+  const mergeAndSetProfile = useCallback((dbProfile: UserProfile) => {
+    if (!dbProfile) return;
+
+    const localProfile = profileRef.current;
+
+    // If no local data, just use DB data
+    if (!localProfile || localProfile.explorations.length === 0) {
+      setProfile(dbProfile);
+      return;
+    }
+
+    // Merge local + DB data (keeps the most complete version of each)
+    const mergedExplorations = mergeExplorations(localProfile.explorations, dbProfile.explorations);
+    const mergedProgress = mergeLessonProgress(localProfile.lessonProgress, dbProfile.lessonProgress);
+
+    const mergedProfile: UserProfile = {
+      ...dbProfile,
+      explorations: mergedExplorations,
+      lessonProgress: mergedProgress,
+      stats: {
+        ...dbProfile.stats,
+        termsExplored: mergedExplorations.length,
+        deepDivesCompleted: mergedExplorations.filter(e => e.deepDiveViewedAt).length,
+        quizzesPassed: mergedExplorations.filter(e => e.quizScore && e.quizScore >= 70).length,
+        totalTimeMinutes: mergedProgress.reduce((sum, p) => sum + p.timeSpentMinutes, 0),
+      },
+    };
+
+    setProfile(mergedProfile);
+  }, [setProfile]);
 
   // Initialize auth state
   useEffect(() => {
@@ -61,11 +103,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
 
-      // Load user data if authenticated
+      // Load user data if authenticated — MERGE with local data, don't overwrite
       if (session?.user) {
         loadUserDataFromDatabase(session.user.id).then((userData) => {
           if (userData) {
-            setProfile(userData);
+            mergeAndSetProfile(userData);
           }
         });
       }
@@ -81,15 +123,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null);
 
       if (event === 'SIGNED_IN' && session?.user) {
-        // Sync local data to database on sign in
-        if (profile && profile.user.id === 'guest') {
-          await syncLocalDataToDatabase(session.user.id, profile);
+        // Always sync local data to database on sign in
+        const localProfile = profileRef.current;
+        if (localProfile && localProfile.explorations.length > 0) {
+          await syncLocalDataToDatabase(session.user.id, localProfile);
         }
 
-        // Load user data from database
+        // Load user data from database and MERGE with local
         const userData = await loadUserDataFromDatabase(session.user.id);
         if (userData) {
-          setProfile(userData);
+          mergeAndSetProfile(userData);
         }
       }
 
@@ -101,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [isConfigured, profile, setProfile, storeLogout]);
+  }, [isConfigured, mergeAndSetProfile, storeLogout]);
 
   // Sign in with email/password
   const signIn = useCallback(async (email: string, password: string) => {

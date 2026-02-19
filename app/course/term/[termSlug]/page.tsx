@@ -438,8 +438,20 @@ export default function TermDeepDivePage() {
 
   // --- Quiz Handlers ---
   const handleQuizAnswer = (questionIndex: number, optionIndex: number) => {
-    setSelectedAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }));
+    const newAnswers = { ...selectedAnswers, [questionIndex]: optionIndex };
+    setSelectedAnswers(newAnswers);
     setShowResults((prev) => ({ ...prev, [questionIndex]: true }));
+
+    // Check if all questions answered — save score
+    const totalQuestions = content.quiz.length;
+    const answeredCount = Object.keys(newAnswers).length;
+    if (answeredCount === totalQuestions) {
+      const correctCount = content.quiz.filter(
+        (q, i) => newAnswers[i] === q.correctIndex
+      ).length;
+      const score = Math.round((correctCount / totalQuestions) * 100);
+      updateExploration(termSlug, { quizScore: score });
+    }
   };
 
   const allQuestionsAnswered = content.quiz.length > 0 &&
