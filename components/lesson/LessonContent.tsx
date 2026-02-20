@@ -207,29 +207,31 @@ export function LessonContent({ content, terms, highlightIndex = -1 }: LessonCon
     );
 
     return (
-      <div key={key} data-audio-index={idx} className={`my-6 overflow-x-auto ${highlightClass(idx)}`}>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              {headers.map((header, i) => (
-                <th key={i} className="bg-gray-100 text-left p-3 font-semibold border-b-2 border-gray-300">
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {dataRows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} className="p-3 border-b border-gray-200">
-                    {parseInlineContent(cell, termsMap)}
-                  </td>
+      <div key={key} data-audio-index={idx} className={`my-6 -mx-4 sm:mx-0 ${highlightClass(idx)}`}>
+        <div className="overflow-x-auto px-4 sm:px-0">
+          <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
+            <thead>
+              <tr>
+                {headers.map((header, i) => (
+                  <th key={i} className="bg-gray-100 text-left p-2 sm:p-3 font-semibold border-b-2 border-gray-300 text-sm sm:text-base whitespace-nowrap">
+                    {header}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {dataRows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex} className="p-2 sm:p-3 border-b border-gray-200 text-sm sm:text-base">
+                      {parseInlineContent(cell, termsMap)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };

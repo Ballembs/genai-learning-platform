@@ -163,17 +163,19 @@
   }
   
   .lesson-content pre {
-    @apply bg-gray-900 text-gray-100 rounded-lg p-4 
-           overflow-x-auto my-6 text-sm;
+    @apply bg-gray-900 text-gray-100 rounded-lg p-3 sm:p-4
+           overflow-x-auto my-6 text-xs sm:text-sm;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
-  
+
   .lesson-content code {
-    @apply bg-gray-100 text-primary-700 px-1.5 py-0.5 
-           rounded text-sm font-mono;
+    @apply bg-gray-100 text-primary-700 px-1.5 py-0.5
+           rounded text-xs sm:text-sm font-mono;
   }
-  
+
   .lesson-content pre code {
-    @apply bg-transparent text-gray-100 p-0;
+    @apply bg-transparent text-gray-100 p-0 block;
   }
   
   .lesson-content blockquote {

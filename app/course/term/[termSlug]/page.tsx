@@ -144,7 +144,7 @@ function DeepDiveSkeleton() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-100 sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-6 py-4">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
@@ -162,7 +162,7 @@ function DeepDiveSkeleton() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Hero skeleton */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-8">
           <div className="flex items-center gap-3 mb-4">
@@ -489,7 +489,7 @@ export default function TermDeepDivePage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-100 sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-6 py-4">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 text-sm">
@@ -549,7 +549,7 @@ export default function TermDeepDivePage() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <motion.div
           key={`${termSlug}-${currentLevel}`}
           initial={{ opacity: 0, y: 20 }}
