@@ -348,6 +348,38 @@ export default function CoursePage() {
           })}
         </div>
 
+        {/* Build Along Projects */}
+        <div className="mt-10 sm:mt-14">
+          <div className="text-center mb-6">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+              Build Along Projects
+            </h2>
+            <p className="text-gray-500 text-sm mt-1">
+              Apply your knowledge to build real AI systems
+            </p>
+          </div>
+
+          <Link
+            href="/course/projects"
+            className="block bg-gradient-to-r from-violet-500 to-purple-600 rounded-2xl p-6 sm:p-8 text-white hover:shadow-xl transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg sm:text-xl font-bold mb-1">
+                  2 Guided Projects Available
+                </h3>
+                <p className="text-white/80 text-sm sm:text-base">
+                  Build an AI Support Bot • Design a Research Agent
+                </p>
+                <p className="text-white/60 text-xs sm:text-sm mt-2">
+                  Multi-step, AI-reviewed, portfolio-worthy
+                </p>
+              </div>
+              <ChevronRight className="w-6 h-6 text-white/60 group-hover:text-white transition-colors flex-shrink-0" />
+            </div>
+          </Link>
+        </div>
+
         {/* Bottom CTA */}
         <div className="mt-8 sm:mt-12 text-center">
           <p className="text-gray-500 text-sm sm:text-base mb-2 sm:mb-4">
