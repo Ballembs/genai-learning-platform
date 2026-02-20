@@ -5,7 +5,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft,
   ChevronRight,
@@ -18,6 +18,8 @@ import { useAuth } from '@/lib/auth';
 import { LessonContent } from '@/components/lesson/LessonContent';
 import { LessonQuiz } from '@/components/lesson/LessonQuiz';
 import { Sidebar } from '@/components/lesson/Sidebar';
+import { ExplainLikeButton, ExplainLikeBanner } from '@/components/lesson/ExplainLike';
+import type { Persona } from '@/components/lesson/ExplainLike';
 import { BottomSheet, BottomSheetTrigger } from '@/components/ui/BottomSheet';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { lessonData } from '@/content/lessons';
@@ -60,6 +62,13 @@ export default function LessonPage() {
   const lastSavedProgressRef = useRef(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isMobile = useIsMobile();
+
+  // Explain Like... feature
+  const [activePersona, setActivePersona] = useState<Persona | null>(null);
+  const [personaContent, setPersonaContent] = useState<string | null>(null);
+  const [isExplainLoading, setIsExplainLoading] = useState(false);
+  // Cache: persona.id → content (so switching back and forth is instant)
+  const [personaCache, setPersonaCache] = useState<Record<string, string>>({});
 
   // Get lesson data
   const lesson = lessonData[lessonSlug];
@@ -150,6 +159,62 @@ export default function LessonPage() {
     };
   }, [lesson, updateLessonProgress]);
 
+  const handlePersonaSelect = async (persona: Persona) => {
+    if (!lesson) return;
+
+    // Check client-side cache first
+    const cacheKey = `${lesson.id}:${persona.id}:${currentLevel}`;
+    if (personaCache[cacheKey]) {
+      setActivePersona(persona);
+      setPersonaContent(personaCache[cacheKey]);
+      return;
+    }
+
+    setActivePersona(persona);
+    setIsExplainLoading(true);
+
+    try {
+      const res = await fetch('/api/explain-like', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lessonContent: lesson.content[currentLevel],
+          lessonTitle: lesson.title,
+          persona: persona.id,
+          level: currentLevel,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || 'Failed to generate');
+      }
+
+      const data = await res.json();
+      setPersonaContent(data.content);
+      // Cache it client-side
+      setPersonaCache(prev => ({ ...prev, [cacheKey]: data.content }));
+    } catch (error) {
+      console.error('Explain Like error:', error);
+      // Clear persona on error so user can try again
+      setActivePersona(null);
+      setPersonaContent(null);
+    } finally {
+      setIsExplainLoading(false);
+    }
+  };
+
+  const handleClearPersona = () => {
+    setActivePersona(null);
+    setPersonaContent(null);
+  };
+
+  // Clear persona content when level changes (content is different per level)
+  useEffect(() => {
+    setActivePersona(null);
+    setPersonaContent(null);
+  }, [currentLevel]);
+
   if (!lesson) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -204,6 +269,13 @@ export default function LessonPage() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+              {/* Explain Like button */}
+              <ExplainLikeButton
+                onSelect={handlePersonaSelect}
+                isLoading={isExplainLoading}
+                activePersona={activePersona}
+                onClear={handleClearPersona}
+              />
               <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
                 <Clock className="w-4 h-4" />
                 {lesson.estimatedMinutes} min
@@ -276,12 +348,35 @@ export default function LessonPage() {
                 </div>
               </div>
 
+              {/* Persona Banner */}
+              <AnimatePresence>
+                {activePersona && (
+                  <ExplainLikeBanner
+                    persona={activePersona}
+                    onClear={handleClearPersona}
+                    isLoading={isExplainLoading}
+                  />
+                )}
+              </AnimatePresence>
+
               {/* Lesson Body */}
               <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-8">
-                <LessonContent
-                  content={lesson.content[currentLevel]}
-                  terms={lesson.terms}
-                />
+                {isExplainLoading ? (
+                  <div className="space-y-4 animate-pulse">
+                    <div className="h-8 bg-gray-200 rounded w-3/4" />
+                    <div className="h-4 bg-gray-100 rounded w-full" />
+                    <div className="h-4 bg-gray-100 rounded w-5/6" />
+                    <div className="h-4 bg-gray-100 rounded w-4/6" />
+                    <div className="h-8 bg-gray-200 rounded w-2/3 mt-8" />
+                    <div className="h-4 bg-gray-100 rounded w-full" />
+                    <div className="h-4 bg-gray-100 rounded w-5/6" />
+                  </div>
+                ) : (
+                  <LessonContent
+                    content={activePersona && personaContent ? personaContent : lesson.content[currentLevel]}
+                    terms={lesson.terms}
+                  />
+                )}
               </div>
 
               {/* Try It Yourself Demo */}

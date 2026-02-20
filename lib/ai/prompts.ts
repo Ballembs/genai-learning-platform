@@ -333,3 +333,90 @@ export function buildChatMessages(params: ChatPromptParams): Array<{ role: 'user
 
   return messages;
 }
+
+/**
+ * Build prompt for "Explain Like..." persona re-explanation
+ */
+export function buildExplainLikePrompt(params: {
+  lessonContent: string;
+  lessonTitle: string;
+  persona: string;
+  level: string;
+}): string {
+  const { lessonContent, lessonTitle, persona, level } = params;
+
+  const personaGuide: Record<string, string> = {
+    chef: `You are a master chef explaining AI concepts using cooking and kitchen analogies.
+- Tokens = ingredients, Context window = the size of your pot, Temperature = how experimental the recipe is
+- Models = recipe books trained on millions of dishes
+- Embeddings = how a sommelier maps flavors in their mind
+- RAG = having your recipe binder open while cooking instead of cooking from memory
+- Use terms like: recipe, ingredients, kitchen, mise en place, seasoning, flavor profile, plating
+- Make it feel like a warm, engaging cooking lesson`,
+
+    doctor: `You are a medical doctor explaining AI concepts using healthcare and biology analogies.
+- Tokens = cells (basic building blocks), Context window = short-term memory capacity
+- Models = diagnostic reasoning trained on millions of patient cases
+- Embeddings = how the brain encodes symptoms into patterns for differential diagnosis
+- RAG = consulting medical references during a diagnosis instead of relying on memory alone
+- Use terms like: diagnosis, symptoms, treatment, vitals, triage, prognosis, neural pathways
+- Make it feel like a clear, authoritative medical briefing`,
+
+    kid: `You are explaining AI concepts to a curious 10-year-old using fun, simple analogies.
+- Tokens = LEGO bricks that AI snaps together to build sentences
+- Context window = how many LEGO bricks fit on the baseplate
+- Models = a super-smart robot that read every book in the biggest library ever
+- Embeddings = sorting your toys by how similar they are (action figures near action figures)
+- RAG = the robot carrying a cheat sheet instead of memorizing everything
+- Use short sentences, exciting examples, "Imagine..." and "It's like..."
+- Reference things kids know: video games, school, toys, cartoons, snacks`,
+
+    manager: `You are a business strategist explaining AI concepts in terms of ROI, operations, and strategy.
+- Tokens = units of compute cost (every word costs money), Context window = meeting agenda capacity
+- Models = a highly trained analyst who read every report in the industry
+- Embeddings = how market research segments customers by behavior similarity
+- RAG = giving your analyst access to your company's documents before they answer
+- Use terms like: ROI, pipeline, throughput, stakeholder, deliverable, cost-per-unit, scalability
+- Focus on business impact, cost implications, and competitive advantage
+- Make it feel like an executive briefing`,
+
+    developer: `You are a senior software engineer explaining AI concepts using programming and systems analogies.
+- Tokens = lexer tokens / bytecodes that the model processes
+- Context window = stack size / buffer capacity
+- Models = a giant hash map from input patterns to probability distributions
+- Embeddings = feature vectors / hash functions that preserve semantic distance
+- RAG = dependency injection — give the model data at runtime instead of compile time
+- Use terms like: API, runtime, cache, buffer, latency, throughput, hash map, index
+- Include mental models about data structures and system design
+- Make it feel like a senior dev explaining to a mid-level colleague`,
+  };
+
+  const guide = personaGuide[persona] || personaGuide['kid'];
+
+  return `Re-explain the following lesson content using a specific persona/perspective.
+
+PERSONA: ${persona.toUpperCase()}
+${guide}
+
+LESSON TITLE: ${lessonTitle}
+LEVEL: ${level}
+
+ORIGINAL CONTENT:
+---
+${lessonContent}
+---
+
+INSTRUCTIONS:
+1. Rewrite ALL the content above through the ${persona} persona's lens
+2. PRESERVE the exact same structure: same ## headings, same ### subheadings, same sections
+3. PRESERVE all [bracketed terms] exactly as they are — these are clickable links. Every [term] in the original MUST appear in your version too
+4. PRESERVE any mermaid code blocks exactly as-is (do NOT modify diagrams)
+5. PRESERVE any code blocks exactly as-is (do NOT modify code examples)
+6. PRESERVE tables exactly as-is (do NOT modify tables)
+7. Replace explanations, analogies, and examples with ones that fit the ${persona} persona
+8. Keep the same approximate length for each section
+9. Maintain technical accuracy — the persona affects HOW you explain, not WHAT you explain
+10. Make it feel natural and immersive, not forced
+
+OUTPUT: Return ONLY the rewritten markdown content. No preamble, no "Here's the rewritten content:", no wrapping. Just the markdown, starting with the first ## heading.`;
+}
