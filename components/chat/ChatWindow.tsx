@@ -6,10 +6,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Minimize2, Maximize2, Trash2, Bot, User, Loader2, X, ChevronDown } from 'lucide-react';
 import { useChatStore, useUserStore, useNavigationStore } from '@/lib/store';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { lessonData } from '@/content/lessons';
 import type { ChatMessage } from '@/types';
+
+// Get friendly lesson name from slug
+function getLessonName(lessonId: string | null): string | null {
+  if (!lessonId) return null;
+  const lesson = lessonData[lessonId];
+  return lesson?.title || lessonId;
+}
 
 export function ChatWindow() {
   const [input, setInput] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
@@ -122,6 +131,76 @@ export function ChatWindow() {
     }
   };
 
+  // Send a message directly (for suggestions)
+  const sendMessage = async (message: string) => {
+    if (!message.trim() || isLoading) return;
+    setInput(message);
+    // Use setTimeout to ensure state is updated before sending
+    setTimeout(() => {
+      const syntheticInput = message.trim();
+      sendDirectMessage(syntheticInput);
+    }, 0);
+  };
+
+  const sendDirectMessage = async (messageText: string) => {
+    const userMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: messageText,
+      timestamp: new Date(),
+      context: currentLessonId || undefined,
+    };
+
+    addMessage(userMessage);
+    setInput('');
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: messageText,
+          context: {
+            currentPage: typeof window !== 'undefined' ? window.location.pathname : '',
+            lessonId: currentLessonId || undefined,
+            termId: currentTermId || undefined,
+            userLevel: currentLevel,
+            recentExplorations: [],
+          },
+          history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          goal: currentGoal,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      const assistantMessage: ChatMessage = {
+        id: `msg-${Date.now() + 1}`,
+        role: 'assistant',
+        content: data.message || data.response || data.content || 'Sorry, I could not generate a response.',
+        timestamp: new Date(),
+      };
+
+      addMessage(assistantMessage);
+    } catch (error) {
+      console.error('Chat error:', error);
+      addMessage({
+        id: `msg-${Date.now() + 1}`,
+        role: 'assistant',
+        content: `I'm having trouble connecting right now. ${error instanceof Error ? error.message : 'Please try again in a moment.'}`,
+        timestamp: new Date(),
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -159,9 +238,10 @@ export function ChatWindow() {
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={clearMessages}
-              className="p-2 hover:bg-white/20 rounded-lg transition-colors touch-target"
+              onClick={() => messages.length > 0 ? setShowClearConfirm(true) : undefined}
+              className="p-2 hover:bg-white/20 rounded-lg transition-colors touch-target disabled:opacity-50"
               title="Clear chat"
+              disabled={messages.length === 0}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -195,8 +275,8 @@ export function ChatWindow() {
             {/* Context indicator */}
             {currentLessonId && (
               <div className="px-4 py-2 bg-primary-50 text-primary-700 text-sm border-b border-primary-100">
-                📍 Context: {currentLessonId}
-                {currentTermId && ` > ${currentTermId}`}
+                📍 Context: {getLessonName(currentLessonId)}
+                {currentTermId && ` > ${currentTermId.replace(/-/g, ' ')}`}
               </div>
             )}
 
@@ -218,8 +298,9 @@ export function ChatWindow() {
                     ].map((suggestion, i) => (
                       <button
                         key={i}
-                        onClick={() => setInput(suggestion)}
-                        className="block w-full text-sm text-primary-600 hover:text-primary-700 hover:underline"
+                        onClick={() => sendDirectMessage(suggestion)}
+                        disabled={isLoading}
+                        className="block w-full text-sm text-primary-600 hover:text-primary-700 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         "{suggestion}"
                       </button>
@@ -357,6 +438,49 @@ export function ChatWindow() {
             </div>
           </>
         )}
+
+        {/* Clear confirmation modal */}
+        <AnimatePresence>
+          {showClearConfirm && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/40 flex items-center justify-center p-4 z-10"
+              onClick={() => setShowClearConfirm(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white rounded-xl p-5 max-w-xs w-full shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="font-semibold text-gray-900 mb-2">Clear chat history?</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  This will remove all messages from this conversation. This cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      clearMessages();
+                      setShowClearConfirm(false);
+                    }}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </AnimatePresence>
   );

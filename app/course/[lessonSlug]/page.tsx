@@ -73,6 +73,11 @@ export default function LessonPage() {
   // Get lesson data
   const lesson = lessonData[lessonSlug];
 
+  // Scroll to top when lesson changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [lessonSlug]);
+
   // Set navigation state
   useEffect(() => {
     if (lesson) {

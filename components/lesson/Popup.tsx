@@ -67,17 +67,24 @@ async function getPopupContent(
 
   // 4. Call API for unknown terms (generates with Claude)
   try {
-    // Find lesson context
+    // Find lesson context from lessonData
     let lessonTitle = 'AI Course';
     if (lessonId) {
-      const lessonMeta: Record<string, string> = {
-        'lesson-01': 'How AI Works',
-        'lesson-02': 'Prompt Engineering',
-        'lesson-03': 'Embeddings & Vector Search',
-        'lesson-04': 'RAG',
-        'lesson-05': 'Agents & Tools',
-      };
-      lessonTitle = lessonMeta[lessonId] || lessonTitle;
+      // lessonId might be in format "lesson-01" or "01-how-ai-works"
+      const lesson = lessonData[lessonId];
+      if (lesson) {
+        lessonTitle = lesson.title;
+      } else {
+        // Try extracting number and matching
+        const numMatch = lessonId.match(/(\d+)/);
+        if (numMatch) {
+          const num = numMatch[1].padStart(2, '0');
+          const matchingKey = Object.keys(lessonData).find(k => k.startsWith(num));
+          if (matchingKey) {
+            lessonTitle = lessonData[matchingKey].title;
+          }
+        }
+      }
     }
 
     const response = await fetch('/api/popup', {

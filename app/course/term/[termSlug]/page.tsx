@@ -92,25 +92,14 @@ interface TermInfo {
  * Searches all lessons for a term matching the slug.
  */
 function findTermInfo(termSlug: string): TermInfo | null {
-  const lessonMeta: Record<string, { id: string; title: string; slug: string }> = {
-    '01-how-ai-works': { id: 'lesson-01', title: 'How AI Works', slug: '01-how-ai-works' },
-    '02-prompt-engineering': { id: 'lesson-02', title: 'Prompt Engineering', slug: '02-prompt-engineering' },
-    '03-embeddings': { id: 'lesson-03', title: 'Embeddings & Vector Search', slug: '03-embeddings' },
-    '04-rag': { id: 'lesson-04', title: 'RAG', slug: '04-rag' },
-    '05-agents': { id: 'lesson-05', title: 'Agents & Tools', slug: '05-agents' },
-  };
-
   for (const [lessonKey, lesson] of Object.entries(lessonData)) {
-    const meta = lessonMeta[lessonKey];
-    if (!meta) continue;
-
     const term = lesson.terms.find((t) => t.slug === termSlug || t.id === termSlug);
     if (term) {
       return {
         termName: term.term,
-        fromLessonId: meta.id,
-        fromLessonTitle: meta.title,
-        fromLessonSlug: meta.slug,
+        fromLessonId: lesson.id,
+        fromLessonTitle: lesson.title,
+        fromLessonSlug: lessonKey,
       };
     }
   }
