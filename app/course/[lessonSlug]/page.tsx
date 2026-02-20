@@ -1,7 +1,7 @@
 // app/course/[lessonSlug]/page.tsx
 'use client';
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -11,16 +11,9 @@ import {
   ChevronRight,
   Clock,
   BookOpen,
-  CheckCircle,
-  Circle,
-  User,
-  List,
   TrendingUp,
 } from 'lucide-react';
-import { useUserStore, useNavigationStore, usePopupStore } from '@/lib/store';
-import { parseContentForAudio } from '@/lib/audio/contentParser';
-import { useAudioReader } from '@/hooks/useAudioReader';
-import { AudioPlayer, AudioPlayButton } from '@/components/audio/AudioPlayer';
+import { useUserStore, useNavigationStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth';
 import { LessonContent } from '@/components/lesson/LessonContent';
 import { LessonQuiz } from '@/components/lesson/LessonQuiz';
@@ -70,51 +63,6 @@ export default function LessonPage() {
 
   // Get lesson data
   const lesson = lessonData[lessonSlug];
-
-  // Audio reader
-  const audioSegments = useMemo(
-    () => (lesson ? parseContentForAudio(lesson.content[currentLevel]) : []),
-    [lesson, currentLevel]
-  );
-  const [audioState, audioControls] = useAudioReader(audioSegments);
-
-  // Pause audio when popup opens
-  const { isOpen: isPopupOpen } = usePopupStore();
-
-  useEffect(() => {
-    if (isPopupOpen && audioState.isPlaying && !audioState.isPaused) {
-      audioControls.pause();
-    }
-  }, [isPopupOpen, audioState.isPlaying, audioState.isPaused, audioControls]);
-
-  // Stop audio when level changes (content changes)
-  useEffect(() => {
-    audioControls.stop();
-  }, [currentLevel]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Stop audio on unmount / navigation
-  useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
-  // Auto-scroll to keep current audio segment visible
-  useEffect(() => {
-    if (audioState.currentIndex < 0) return;
-    const el = document.querySelector(
-      `[data-audio-index="${audioState.currentIndex}"]`
-    );
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      // Only scroll if element is not in view
-      if (rect.top < 100 || rect.bottom > window.innerHeight - 100) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  }, [audioState.currentIndex]);
 
   // Set navigation state
   useEffect(() => {
@@ -256,12 +204,6 @@ export default function LessonPage() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-              {!audioState.isPlaying && (
-                <AudioPlayButton
-                  onClick={audioControls.play}
-                  isSupported={audioState.isSupported}
-                />
-              )}
               <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
                 <Clock className="w-4 h-4" />
                 {lesson.estimatedMinutes} min
@@ -292,14 +234,6 @@ export default function LessonPage() {
           </div>
         </div>
       </header>
-
-      {/* Audio Player Bar */}
-      <AudioPlayer
-        state={audioState}
-        controls={audioControls}
-        segments={audioSegments}
-        lessonTitle={lesson.title}
-      />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 pb-32 lg:pb-8">
@@ -347,7 +281,6 @@ export default function LessonPage() {
                 <LessonContent
                   content={lesson.content[currentLevel]}
                   terms={lesson.terms}
-                  highlightIndex={audioState.currentIndex}
                 />
               </div>
 
